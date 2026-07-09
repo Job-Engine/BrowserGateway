@@ -28,5 +28,11 @@
   "dependencies": {
     "@browserbasehq/stagehand": "^3.6.0",
     "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "tsx": "^4.23.0",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
   }
 }
