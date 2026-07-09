@@ -1217,9 +1217,9 @@ describe("runAgent", () => {
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run test/index.test.ts`
-Expected: FAIL — cannot find module `../src/index.js`.
+Expected: FAIL. Note: `src/index.ts` already exists as a placeholder stub from Task 1 (it holds no real exports), so the failure manifests as missing exports — e.g. `runAgent`/`autoApprove` are `undefined` ("runAgent is not a function", `DEFAULT_MODEL` assertion fails) — rather than "cannot find module". This is the RED phase.
 
-- [ ] **Step 3: Write `src/index.ts`**
+- [ ] **Step 3: Write `src/index.ts` (overwrite the Task 1 placeholder stub)**
 
 ```ts
 import type { AgentRunResult, ProposedAction, RunAgentOptions } from "./types.js";
