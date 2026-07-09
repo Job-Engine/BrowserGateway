@@ -25,9 +25,8 @@ export function classifyRisk(
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
-  const haystackWords = haystack.split(/\s+/).filter(Boolean);
   const hit = keywords.find((k) => haystack.includes(k.toLowerCase()));
-  return hit && haystackWords.length > 1
+  return hit
     ? { level: "risky", reason: `matched risky keyword "${hit}"` }
     : { level: "safe", reason: "no risky signal detected" };
 }
