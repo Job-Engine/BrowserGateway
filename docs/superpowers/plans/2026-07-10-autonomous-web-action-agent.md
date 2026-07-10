@@ -580,7 +580,7 @@ function makeFakeAgent(opts: {
         return plans.shift() ?? { reasoning: "done", isDone: true, instruction: "" };
       }
       return opts.finalExtract;
-    }),
+    }) as unknown as BrowserAgent["extract"], // cast: vi.fn can't express the generic extract<T> signature
     close: vi.fn(async () => {}),
   };
   return { agent, acted };
@@ -1175,7 +1175,7 @@ const fake: { agent: BrowserAgent } = {
       const shape = schema?.shape ?? {};
       if ("isDone" in shape) return { reasoning: "", isDone: true, instruction: "" };
       return {};
-    }),
+    }) as unknown as BrowserAgent["extract"], // cast: vi.fn can't express the generic extract<T> signature
     close: vi.fn(async () => {}),
   },
 };
