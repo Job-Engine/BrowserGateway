@@ -177,4 +177,22 @@ describe("runLoop", () => {
     expect(JSON.stringify(events)).not.toContain("s3cret");
     expect(JSON.stringify(res.actionsLog)).not.toContain("s3cret");
   });
+
+  it("redacts the planner instruction in the no-observe failure record", async () => {
+    const events: import("../src/types.js").AgentEvent[] = [];
+    const { agent } = makeFakeAgent({
+      plans: [{ reasoning: "", isDone: false, instruction: "click the s3cret button" }],
+      observe: () => [], // never finds an element -> exercises the no-observe branch
+    });
+    const res = await runLoop({
+      ...base,
+      agent,
+      variables: { password: "s3cret" },
+      secretValues: ["s3cret"],
+      onEvent: (e) => events.push(e),
+    });
+    expect(res.actionsLog.some((r) => r.outcome === "failed")).toBe(true);
+    expect(JSON.stringify(res.actionsLog)).not.toContain("s3cret");
+    expect(JSON.stringify(events)).not.toContain("s3cret");
+  });
 });
