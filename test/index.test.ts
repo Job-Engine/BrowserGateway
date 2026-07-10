@@ -32,6 +32,8 @@ describe("runAgent", () => {
     await expect(runAgent({ url: "https://x.com" })).rejects.toBeInstanceOf(TypeError);
     // @ts-expect-error missing url
     await expect(runAgent({ goal: "do it" })).rejects.toBeInstanceOf(TypeError);
+    await expect(runAgent({ url: "https://x.com", goal: "g", maxSteps: 0 })).rejects.toBeInstanceOf(TypeError);
+    await expect(runAgent({ url: "https://x.com", goal: "g", maxSteps: 1.5 })).rejects.toBeInstanceOf(TypeError);
   });
 
   it("returns a completed result and closes the session", async () => {
@@ -55,5 +57,34 @@ describe("runAgent", () => {
   it("exports autoApprove and DEFAULT_MODEL", () => {
     expect(autoApprove({ selector: "", description: "", instruction: "" })).toBe(true);
     expect(DEFAULT_MODEL).toBe("anthropic/claude-sonnet-4-6");
+  });
+
+  it("returns status error (does not throw) when a user callback throws", async () => {
+    const closeSpy = vi.fn(async () => {});
+    const throwingFake: import("../src/types.js").BrowserAgent = {
+      sessionReplayUrl: "https://browserbase.test/session/xyz",
+      goto: async () => {},
+      observe: async () => [{ selector: "x", description: "Submit the form", method: "click" }],
+      act: async () => ({ success: true, message: "ok" }),
+      extract: (async (_i: string, schema: any) => {
+        const shape = schema?.shape ?? {};
+        if ("isDone" in shape) return { reasoning: "", isDone: false, instruction: "submit the form" };
+        return {};
+      }) as unknown as import("../src/types.js").BrowserAgent["extract"],
+      close: closeSpy,
+    };
+    const browser = await import("../src/browser.js");
+    (browser.createSession as any).mockResolvedValueOnce(throwingFake);
+    const res = await runAgent({
+      url: "https://x.com",
+      goal: "g",
+      onBeforeAction: () => {
+        throw new Error("hook boom");
+      },
+    });
+    expect(res.status).toBe("error");
+    expect(res.success).toBe(false);
+    expect(res.error?.message).toContain("hook boom");
+    expect(closeSpy).toHaveBeenCalledTimes(1);
   });
 });
