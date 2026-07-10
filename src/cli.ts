@@ -1,5 +1,6 @@
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout, argv } from "node:process";
+import { pathToFileURL } from "node:url";
 import { runAgent, autoApprove } from "./index.js";
 import type { AgentEvent, ConfirmFn, ProposedAction } from "./types.js";
 
@@ -69,30 +70,30 @@ export async function main(rawArgs: string[]): Promise<void> {
   const args = parseArgs(rawArgs);
   if (args.local) process.env.WAA_ENV = "LOCAL";
 
-  const rlConfirm = args.auto ? null : interactiveConfirm();
-  const onBeforeAction: ConfirmFn = args.auto ? autoApprove : rlConfirm!;
+  // Only create a readline interface (which keeps the event loop alive) when
+  // we actually need interactive confirmation.
+  const onBeforeAction: ConfirmFn = args.auto ? autoApprove : interactiveConfirm();
 
-  try {
-    const result = await runAgent({
-      url: args.url,
-      goal: args.goal,
-      data: args.data,
-      credentials: args.credentials,
-      model: args.model,
-      onBeforeAction,
-      onEvent: printEvent,
-    });
-    stdout.write(`\n=== RESULT ===\n${JSON.stringify(result, null, 2)}\n`);
-  } finally {
-    // readline keeps the process alive; nothing else to clean up.
-    process.exit(0);
-  }
+  const result = await runAgent({
+    url: args.url,
+    goal: args.goal,
+    data: args.data,
+    credentials: args.credentials,
+    model: args.model,
+    onBeforeAction,
+    onEvent: printEvent,
+  });
+  stdout.write(`\n=== RESULT ===\n${JSON.stringify(result, null, 2)}\n`);
+  // The interactive readline interface keeps the process alive, so exit
+  // explicitly — with a non-zero code when the run did not complete, so
+  // callers/automation can detect failure from the exit status.
+  process.exit(result.success ? 0 : 1);
 }
 
 // Run only when executed directly (not when imported by tests).
-if (import.meta.url === `file://${argv[1]}`) {
+if (argv[1] && import.meta.url === pathToFileURL(argv[1]).href) {
   main(argv.slice(2)).catch((err) => {
-    stdout.write(`\n[error] ${err instanceof Error ? err.message : String(err)}\n`);
+    process.stderr.write(`\n[error] ${err instanceof Error ? err.message : String(err)}\n`);
     process.exit(1);
   });
 }
