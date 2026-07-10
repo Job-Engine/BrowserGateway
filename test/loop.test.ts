@@ -143,4 +143,38 @@ describe("runLoop", () => {
     const res = await runLoop({ ...base, agent, extractSchema: z.object({ confirmation: z.string() }) });
     expect(res.extractedData).toEqual({ confirmation: "ABC123" });
   });
+
+  it("redacts secrets from emitted events, the planned instruction, and act messages", async () => {
+    const events: import("../src/types.js").AgentEvent[] = [];
+    const plansLeft = [
+      { reasoning: "", isDone: false, instruction: "type %password% which is s3cret" },
+      { reasoning: "", isDone: true, instruction: "" },
+    ];
+    const agent: import("../src/types.js").BrowserAgent = {
+      sessionReplayUrl: undefined,
+      goto: async () => {},
+      observe: async () => [
+        { selector: "x", description: "Fill password with s3cret", method: "fill", arguments: ["s3cret"] },
+      ],
+      act: async () => ({ success: true, message: "typed s3cret into the field" }),
+      extract: (async (_i: string, schema: any) => {
+        const shape = schema?.shape ?? {};
+        if ("isDone" in shape) {
+          return plansLeft.shift() ?? { reasoning: "", isDone: true, instruction: "" };
+        }
+        return undefined;
+      }) as unknown as import("../src/types.js").BrowserAgent["extract"],
+      close: async () => {},
+    };
+    const res = await runLoop({
+      ...base,
+      agent,
+      variables: { password: "s3cret" },
+      secretValues: ["s3cret"],
+      onEvent: (e) => events.push(e),
+    });
+    expect(res.status).toBe("completed");
+    expect(JSON.stringify(events)).not.toContain("s3cret");
+    expect(JSON.stringify(res.actionsLog)).not.toContain("s3cret");
+  });
 });

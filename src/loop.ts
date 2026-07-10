@@ -118,7 +118,12 @@ export async function runLoop(params: LoopParams): Promise<LoopResult> {
     } catch (e) {
       return finalize("error", { message: `planning failed: ${errMsg(e)}`, step });
     }
-    emit({ type: "planned", step, instruction: plan.instruction, isDone: plan.isDone });
+    emit({
+      type: "planned",
+      step,
+      instruction: redact(plan.instruction, secretValues) ?? plan.instruction,
+      isDone: plan.isDone,
+    });
     if (plan.isDone) return finalize("completed");
 
     // 2. Ground the instruction into a concrete action (retry for transient DOM settling)
@@ -130,9 +135,6 @@ export async function runLoop(params: LoopParams): Promise<LoopResult> {
         candidates = await agent.observe(plan.instruction, variables);
       } catch (e) {
         candidates = [];
-        if (attempt === maxObserveRetries) {
-          emit({ type: "observed", step, action: null });
-        }
         void e;
       }
       if (candidates.length > 0) {
@@ -144,7 +146,7 @@ export async function runLoop(params: LoopParams): Promise<LoopResult> {
     if (!observed) {
       const proposed: ProposedAction = {
         selector: "",
-        description: `Could not locate an element for: ${plan.instruction}`,
+        description: `Could not locate an element for: ${redact(plan.instruction, secretValues) ?? plan.instruction}`,
         instruction: redact(plan.instruction, secretValues) ?? plan.instruction,
       };
       emit({ type: "observed", step, action: null });
