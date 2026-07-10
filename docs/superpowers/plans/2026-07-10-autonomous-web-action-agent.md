@@ -1333,6 +1333,18 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
       stepsUsed: result.stepsUsed,
       error: result.error,
     };
+  } catch (e) {
+    // Honor the contract: runAgent never throws for operational failures
+    // (e.g. a user-supplied onBeforeAction/classifyRisk that throws).
+    return {
+      success: false,
+      status: "error",
+      summary: "The agent run failed unexpectedly.",
+      actionsLog: [],
+      stepsUsed: 0,
+      sessionReplayUrl: agent.sessionReplayUrl,
+      error: { message: errMsg(e) },
+    };
   } finally {
     await agent.close().catch(() => {});
   }
