@@ -85,21 +85,21 @@ Fixed in STAB (do not regress): TOTP is never cached (username/password keep a 6
 
 ## File map
 
-| Path                                 | Role                                                                        |
-| ------------------------------------ | --------------------------------------------------------------------------- |
-| `src/types.ts`                       | BrowserAgent port + core types; the seam that makes the loop testable       |
-| `src/browser.ts`                     | Stagehand v3 adapter (Browserbase or local)                                 |
-| `src/loop.ts`                        | The agent loop: plan, observe, classify, act, extract; redaction lives here |
-| `src/planner.ts`                     | LLM planning step (via extract); sees variable names, never values          |
+| Path                                 | Role                                                                                                 |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `src/types.ts`                       | BrowserAgent port + core types; the seam that makes the loop testable                                |
+| `src/browser.ts`                     | Stagehand v3 adapter (Browserbase or local)                                                          |
+| `src/loop.ts`                        | The agent loop: plan, observe, classify, act, extract; redaction lives here                          |
+| `src/planner.ts`                     | LLM planning step (via extract); sees variable names, never values                                   |
 | `src/risk.ts`                        | Risk keyword classifier (CLI confirm flow only; gateway runs use the code-enforced method allowlist) |
-| `src/index.ts`                       | `runAgent()` entry; never throws for operational failures                   |
-| `src/gateway/catalogue.ts`           | useCase registry: portal, url, schemas, buildGoal                           |
-| `src/gateway/secrets.ts`             | JIT 1Password resolution, 60s cache, env fallback                           |
-| `src/gateway/runner.ts`              | one job end to end: validate, creds, runAgent, envelope                     |
-| `src/gateway/server.ts`              | HTTP surface (node:http in v1, Fastify in v2)                               |
-| `docs/browser-automation-gateway.md` | gateway reference (v1)                                                      |
-| `docs/SESSION-HANDOFF.md`            | session context and decision history                                        |
-| `BrowserGateway/`                    | planning artifacts: reviews, mockups, instructions, feature guide           |
+| `src/index.ts`                       | `runAgent()` entry; never throws for operational failures                                            |
+| `src/gateway/catalogue.ts`           | useCase registry: portal, url, schemas, buildGoal                                                    |
+| `src/gateway/secrets.ts`             | JIT 1Password resolution, 60s cache, env fallback                                                    |
+| `src/gateway/runner.ts`              | one job end to end: validate, creds, runAgent, envelope                                              |
+| `src/gateway/server.ts`              | HTTP surface (node:http in v1, Fastify in v2)                                                        |
+| `docs/browser-automation-gateway.md` | gateway reference (v1)                                                                               |
+| `docs/SESSION-HANDOFF.md`            | session context and decision history                                                                 |
+| `BrowserGateway/`                    | planning artifacts: reviews, mockups, instructions, feature guide                                    |
 
 ## Glossary
 

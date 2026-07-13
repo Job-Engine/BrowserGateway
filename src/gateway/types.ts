@@ -20,6 +20,8 @@ export interface JobMeta {
 export interface JobEnvelope {
   jobId: string;
   useCase: string;
+  /** Whitelabel client identity this job ran as. Additive; absent in v1 envelopes. */
+  client?: string;
   /** success = goal met; failure = ran cleanly but negative outcome; error = system/auth/nav problem. */
   status: JobStatus;
   data?: unknown;

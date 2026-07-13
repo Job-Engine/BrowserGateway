@@ -35,7 +35,8 @@ function makeFakeAgent(opts: {
     }),
     extract: vi.fn(async (_i: string, schema: any) => {
       const shape = schema?.shape ?? {};
-      if ("isDone" in shape) return plans.shift() ?? { reasoning: "", isDone: true, instruction: "" };
+      if ("isDone" in shape)
+        return plans.shift() ?? { reasoning: "", isDone: true, instruction: "" };
       return {};
     }) as unknown as BrowserAgent["extract"],
     close: vi.fn(async () => {}),

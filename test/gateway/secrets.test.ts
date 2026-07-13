@@ -83,6 +83,19 @@ describe("resolvePortalCredentials (1Password path)", () => {
     expect(opReadsMatching("one-time password")).toHaveLength(0);
   });
 
+  it("S6: concurrent resolves share one in-flight op read (single-flight)", async () => {
+    const [a, b, c] = await Promise.all([
+      resolvePortalCredentials("lightreach"),
+      resolvePortalCredentials("lightreach"),
+      resolvePortalCredentials("lightreach"),
+    ]);
+    expect(a.username).toBe("user1");
+    expect(b.username).toBe("user1");
+    expect(c.username).toBe("user1");
+    expect(opReadsMatching("/username")).toHaveLength(1);
+    expect(opReadsMatching("/password")).toHaveLength(1);
+  });
+
   it("M2: the op child receives a minimal env, never the process API keys", async () => {
     await resolvePortalCredentials("lightreach", { withOtp: true });
     expect(op.calls.length).toBeGreaterThan(0);

@@ -38,6 +38,10 @@ interface CacheEntry {
 const cache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 60_000;
 
+// S6: concurrent jobs for the same portal share one in-flight op read instead
+// of stampeding the 1Password rate budget. OTP reads are excluded on purpose.
+const inflight = new Map<string, Promise<{ username: string; password: string }>>();
+
 function vault(): string {
   return process.env.OP_PORTALS_VAULT ?? "Portals";
 }
@@ -96,12 +100,21 @@ export async function resolvePortalCredentials(
   if (cached && cached.expires > Date.now()) {
     staticCreds = cached.value;
   } else {
-    const [username, password] = await Promise.all([
-      opRead(`${base}/username`),
-      opRead(`${base}/password`),
-    ]);
-    staticCreds = { username, password };
-    cache.set(portalKey, { value: staticCreds, expires: Date.now() + CACHE_TTL_MS });
+    let pending = inflight.get(portalKey);
+    if (!pending) {
+      pending = (async () => {
+        const [username, password] = await Promise.all([
+          opRead(`${base}/username`),
+          opRead(`${base}/password`),
+        ]);
+        const value = { username, password };
+        cache.set(portalKey, { value, expires: Date.now() + CACHE_TTL_MS });
+        return value;
+      })();
+      inflight.set(portalKey, pending);
+      void pending.catch(() => {}).finally(() => inflight.delete(portalKey));
+    }
+    staticCreds = await pending;
   }
 
   const creds: PortalCredentials = { ...staticCreds };

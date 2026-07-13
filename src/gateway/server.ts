@@ -1,125 +1,76 @@
-import { createServer, type IncomingMessage } from "node:http";
-import { randomUUID } from "node:crypto";
-import { getEntry, CATALOGUE } from "./catalogue.js";
+// Gateway bootstrap: pool, migrations, stores, queue worker, Fastify API,
+// graceful shutdown (M4). This file only wires modules together; tests target
+// the modules directly.
+import { pathToFileURL } from "node:url";
+import { createPool, migrate } from "./db.js";
+import { createLogger } from "./observability/logger.js";
+import { createJobStore } from "./jobs/store.js";
+import { createAuthStore, hashToken } from "./auth/tokens.js";
+import { buildApp } from "./api/app.js";
+import { createQueueWorker } from "./queue/worker.js";
+import { getEntry } from "./catalogue.js";
 import { runJob } from "./runner.js";
-import type { JobRecord } from "./types.js";
 
-/**
- * Browser Automation Gateway.
- *
- * Callers POST a job (useCase + business input); the gateway resolves portal
- * credentials from 1Password, runs the browser automation, and returns a
- * normalized envelope. Callers never see credentials, agent IDs, or Browserbase.
- *
- * Endpoints:
- *   GET  /health
- *   GET  /catalogue                 -> list of available useCases
- *   POST /jobs { useCase, input }   -> { jobId } (202, async)
- *   GET  /jobs/:id                  -> { state, envelope? }
- *
- * Auth: if GATEWAY_TOKEN is set, callers must send it as `authorization: Bearer <token>`.
- */
+function intEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  const parsed = raw ? Number.parseInt(raw, 10) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
 
-const PORT = Number(process.env.PORT ?? 8080);
-const GATEWAY_TOKEN = process.env.GATEWAY_TOKEN;
+export async function main(): Promise<void> {
+  const logger = createLogger();
+  const pool = createPool();
+  const applied = await migrate(pool);
+  if (applied.length > 0) logger.info({ applied }, "migrations applied");
 
-// In-memory job store. Swap for Redis/DB when you need durability across restarts.
-const jobs = new Map<string, JobRecord>();
+  const store = createJobStore(pool);
+  const auth = createAuthStore(pool);
 
-function readJson(req: IncomingMessage): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    let raw = "";
-    req.on("data", (c) => (raw += c));
-    req.on("end", () => {
-      try {
-        resolve(raw ? JSON.parse(raw) : {});
-      } catch (e) {
-        reject(e);
-      }
-    });
-    req.on("error", reject);
+  // Local-dev convenience only: GATEWAY_DEV_TOKEN seeds one admin caller so a
+  // fresh checkout can talk to itself. Without it the API is fail-closed.
+  if (process.env.GATEWAY_DEV_TOKEN) {
+    await pool.query(
+      `insert into callers (name, token_hash, scopes, is_admin)
+       values ('dev', $1, '["*:*"]', true)
+       on conflict (name) do update set token_hash = excluded.token_hash`,
+      [hashToken(process.env.GATEWAY_DEV_TOKEN)],
+    );
+    logger.warn("dev caller active (GATEWAY_DEV_TOKEN); do not set in production");
+  }
+
+  const queue = createQueueWorker({
+    store,
+    logger,
+    execute: (job) => runJob(job.id, getEntry(job.useCase), job.input),
+    config: {
+      globalCap: intEnv("GATEWAY_GLOBAL_CAP", 3),
+      defaultPlatformCap: intEnv("GATEWAY_PLATFORM_CAP", 2),
+    },
+  });
+
+  const app = buildApp({ store, auth, logger });
+  queue.start();
+  await app.listen({ port: intEnv("PORT", 8080), host: "0.0.0.0" });
+  logger.info({ port: intEnv("PORT", 8080) }, "gateway listening");
+
+  let shuttingDown = false;
+  const shutdown = async (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    logger.info({ signal }, "shutting down: draining queue");
+    await app.close();
+    await queue.stop();
+    await pool.end();
+    logger.info("shutdown complete");
+    process.exit(0);
+  };
+  process.on("SIGTERM", () => void shutdown("SIGTERM"));
+  process.on("SIGINT", () => void shutdown("SIGINT"));
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((e) => {
+    process.stderr.write(`gateway failed to start: ${e instanceof Error ? e.message : e}\n`);
+    process.exit(1);
   });
 }
-
-function authorized(req: IncomingMessage): boolean {
-  if (!GATEWAY_TOKEN) return true;
-  return req.headers.authorization === `Bearer ${GATEWAY_TOKEN}`;
-}
-
-const server = createServer(async (req, res) => {
-  res.setHeader("Content-Type", "application/json");
-  const send = (code: number, body: unknown) => {
-    res.writeHead(code);
-    res.end(JSON.stringify(body));
-  };
-
-  const url = new URL(req.url ?? "/", `http://localhost:${PORT}`);
-  const path = url.pathname;
-
-  if (req.method === "GET" && path === "/health") return send(200, { ok: true });
-
-  if (!authorized(req)) return send(401, { error: "unauthorized" });
-
-  if (req.method === "GET" && path === "/catalogue") {
-    return send(200, { useCases: Object.keys(CATALOGUE) });
-  }
-
-  if (req.method === "POST" && path === "/jobs") {
-    let body: { useCase?: string; input?: unknown };
-    try {
-      body = (await readJson(req)) as typeof body;
-    } catch {
-      return send(400, { error: "invalid JSON body" });
-    }
-    if (!body.useCase) return send(400, { error: "useCase is required" });
-
-    let entry;
-    try {
-      entry = getEntry(body.useCase);
-    } catch (e) {
-      return send(400, { error: e instanceof Error ? e.message : String(e) });
-    }
-
-    const jobId = randomUUID();
-    const record: JobRecord = {
-      jobId,
-      useCase: entry.useCase,
-      state: "PENDING",
-      createdAt: new Date().toISOString(),
-    };
-    jobs.set(jobId, record);
-
-    // Fire and forget; caller polls GET /jobs/:id.
-    void (async () => {
-      record.state = "RUNNING";
-      try {
-        record.envelope = await runJob(jobId, entry, body.input);
-      } catch (e) {
-        record.envelope = {
-          jobId,
-          useCase: entry.useCase,
-          status: "error",
-          error: { code: "GATEWAY_ERROR", message: e instanceof Error ? e.message : String(e) },
-          meta: { ranAt: record.createdAt, durationMs: 0, attempts: 1 },
-        };
-      } finally {
-        record.state = "DONE";
-      }
-    })();
-
-    return send(202, { jobId, state: record.state });
-  }
-
-  const jobMatch = path.match(/^\/jobs\/([0-9a-f-]+)$/i);
-  if (req.method === "GET" && jobMatch) {
-    const record = jobs.get(jobMatch[1]);
-    if (!record) return send(404, { error: "job not found" });
-    return send(200, { jobId: record.jobId, state: record.state, envelope: record.envelope });
-  }
-
-  return send(404, { error: "not found" });
-});
-
-server.listen(PORT, () => {
-  process.stdout.write(`browser-automation-gateway listening on http://localhost:${PORT}\n`);
-});

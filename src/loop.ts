@@ -188,7 +188,8 @@ export async function runLoop(params: LoopParams): Promise<LoopResult> {
     let risk: RiskAssessment;
     if (params.allowedMethods) {
       const method = (observed.method ?? "").toLowerCase();
-      const allowed = method !== "" && params.allowedMethods.some((m) => m.toLowerCase() === method);
+      const allowed =
+        method !== "" && params.allowedMethods.some((m) => m.toLowerCase() === method);
       risk = allowed
         ? { level: "safe", reason: `method "${method}" is allowlisted` }
         : { level: "risky", reason: `method "${method || "(none)"}" is not in the allowlist` };
