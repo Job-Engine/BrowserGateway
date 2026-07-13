@@ -6,3 +6,5 @@ dist/
 .DS_Store
 .remember/
 coverage/
+.playwright-mcp/
+console-catalogue-live.png

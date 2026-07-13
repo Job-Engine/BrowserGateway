@@ -24,6 +24,8 @@
     "test:watch": "vitest",
     "agent": "tsx src/cli.ts",
     "gateway": "tsx src/gateway/server.ts",
+    "console:dev": "npm --prefix admin-web run dev",
+    "console:build": "npm --prefix admin-web run build",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
