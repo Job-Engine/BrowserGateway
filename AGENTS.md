@@ -25,16 +25,16 @@ The Browser Automation Gateway is JobEngine's internal service that gives applic
       "status": "success | failure | error",
       "data": "shaped by the action's extractSchema",
       "error": {
-        "code": "AUTH_REQUIRED | LOGIN_FAILED | SEARCH_FAILED | RECORD_NOT_FOUND | MATCH_FAILED | FIELD_NOT_FOUND | NAVIGATION_ERROR | TIMEOUT",
+        "code": "INVALID_INPUT | AUTH_UNAVAILABLE | RUN_ERROR | ACTION_BLOCKED | TIMEOUT | MATCH_FAILED | NTP_FIELD_NOT_FOUND | GOAL_NOT_COMPLETED | GATEWAY_ERROR",
         "message": "sanitized"
       },
       "meta": {
         "sessionId": "string",
         "sessionReplayUrl": "string",
-        "credentialItem": "string",
         "ranAt": "iso",
         "durationMs": "number",
-        "attempts": "number"
+        "attempts": "number",
+        "stepsUsed": "number"
       }
     },
     "statusSemantics": {
@@ -44,8 +44,23 @@ The Browser Automation Gateway is JobEngine's internal service that gives applic
     }
   },
   "api": {
-    "public": ["GET /health", "GET /catalogue", "POST /jobs", "GET /jobs/:id"],
-    "style": "async + poll; POST /jobs returns 202 {jobId}; poll GET /jobs/:id until state DONE"
+    "public": ["GET /health", "GET /openapi.json", "GET /catalogue", "POST /jobs", "GET /jobs/:id"],
+    "admin": [
+      "GET /admin/stats",
+      "GET /admin/jobs",
+      "GET /admin/jobs/:id",
+      "POST /admin/tokens",
+      "GET /admin/tokens",
+      "POST /admin/tokens/:id/disable",
+      "GET /admin/catalogue",
+      "POST /admin/catalogue/:useCase/validate",
+      "POST /admin/catalogue/:useCase/clients/:client/record-test",
+      "POST /admin/catalogue/:useCase/clients/:client/enable",
+      "POST /admin/catalogue/:useCase/clients/:client/disable",
+      "POST /admin/canaries/run",
+      "GET /admin/audit"
+    ],
+    "style": "async + poll; POST /jobs returns 202 {jobId, state}; poll GET /jobs/:id until state DONE; job states QUEUED -> RUNNING -> DONE"
   },
   "lockedDecisions": [
     "credentials fetched just in time via 1Password (op read / SDK), injected as Stagehand variables, never visible to callers or LLMs",
@@ -83,21 +98,34 @@ Fixed and locked in (do not regress): TOTP never cached (username/password keep 
 
 ## File map
 
-| Path                                 | Role                                                                                                 |
-| ------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| `src/types.ts`                       | BrowserAgent port + core types; the seam that makes the loop testable                                |
-| `src/browser.ts`                     | Stagehand v3 adapter (Browserbase or local)                                                          |
-| `src/loop.ts`                        | The agent loop: plan, observe, classify, act, extract; redaction lives here                          |
-| `src/planner.ts`                     | LLM planning step (via extract); sees variable names, never values                                   |
-| `src/risk.ts`                        | Risk keyword classifier (CLI confirm flow only; gateway runs use the code-enforced method allowlist) |
-| `src/index.ts`                       | `runAgent()` entry; never throws for operational failures                                            |
-| `src/gateway/catalogue.ts`           | useCase registry: portal, url, schemas, buildGoal                                                    |
-| `src/gateway/secrets.ts`             | JIT 1Password resolution, 60s cache, env fallback                                                    |
-| `src/gateway/runner.ts`              | one job end to end: validate, creds, runAgent, envelope                                              |
-| `src/gateway/server.ts`              | HTTP surface (node:http in v1, Fastify in v2)                                                        |
-| `docs/browser-automation-gateway.md` | gateway reference (v1)                                                                               |
-| `docs/SESSION-HANDOFF.md`            | session context and decision history                                                                 |
-| `BrowserGateway/`                    | planning artifacts: reviews, mockups, instructions, feature guide                                    |
+| Path                                  | Role                                                                                                                       |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `src/types.ts`                        | BrowserAgent port + core types; the seam that makes the loop testable                                                      |
+| `src/browser.ts`                      | Stagehand v3 adapter (Browserbase or local)                                                                                |
+| `src/loop.ts`                         | The agent loop: plan, observe, classify, act, extract; redaction lives here                                                |
+| `src/planner.ts`                      | LLM planning step (via extract); sees variable names, never values                                                         |
+| `src/risk.ts`                         | Risk keyword classifier (CLI confirm flow only; gateway runs use the code-enforced method allowlist)                       |
+| `src/index.ts`                        | `runAgent()` entry; never throws for operational failures                                                                  |
+| `src/gateway/catalogue.ts`            | useCase registry: portal, url, schemas, buildGoal, client rosters + navigation overrides, resolveAction                    |
+| `src/gateway/secrets.ts`              | JIT 1Password resolution per platform.client; 60s username/password cache, OTP never cached, single-flight, minimal op env |
+| `src/gateway/runner.ts`               | one job end to end: validate, creds, runAgent (read-only allowlist, timeout), envelope                                     |
+| `src/gateway/registry.ts`             | DB-backed lifecycle: validation lint gate, first-live-run rule, enablement, canary state, audit                            |
+| `src/gateway/db.ts`                   | pg pool + migration runner (migrations/*.sql, applied on boot)                                                             |
+| `src/gateway/jobs/store.ts`           | durable job store: enqueue with idempotency, skip-locked claim under caps, complete/requeue, sweep                         |
+| `src/gateway/queue/worker.ts`         | claim loop, one retry for transient errors, cost accounting, graceful drain                                                |
+| `src/gateway/auth/tokens.ts`          | per-caller hashed tokens, useCase:client scopes, fail closed                                                               |
+| `src/gateway/api/app.ts`              | Fastify public surface: health, openapi, catalogue, jobs                                                                   |
+| `src/gateway/api/admin.ts`            | /admin surface: jobs ops, tokens, catalogue lifecycle, canaries, audit                                                     |
+| `src/gateway/api/openapi.ts`          | GET /openapi.json document + the closed error-code enum                                                                    |
+| `src/gateway/canary/scheduler.ts`     | scheduled known-record runs per live pair; Slack/log alerts                                                                |
+| `src/gateway/observability/logger.ts` | pino with PII and credential redaction                                                                                     |
+| `src/gateway/server.ts`               | composition root: pool, migrate, seed, queue, canary, Fastify, SIGTERM drain                                               |
+| `migrations/`                         | ordered SQL migrations (schema source of truth)                                                                            |
+| `packages/gateway-client/`            | @job-engine/gateway-client typed caller SDK                                                                                |
+| `admin-web/`                          | React 19 + Vite admin console (visual contract: BrowserGateway/admin-console-v2.html)                                      |
+| `docs/browser-automation-gateway.md`  | gateway v2 operator/integrator reference                                                                                   |
+| `docs/SESSION-HANDOFF.md`             | session context and decision history                                                                                       |
+| `BrowserGateway/`                     | planning artifacts: reviews, mockups, instructions, feature guide                                                          |
 
 ## Glossary
 

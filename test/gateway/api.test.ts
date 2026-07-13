@@ -289,6 +289,123 @@ describe("GET /openapi.json and admin surface", () => {
     expect(submit.statusCode).toBe(202);
   });
 
+  it("admin stats, jobs listing, job detail, audit, and token disable all respond", async () => {
+    const stats = await app.inject({ method: "GET", url: "/admin/stats", headers: authed(adminToken) });
+    expect(stats.statusCode).toBe(200);
+    expect(stats.json().jobs).toHaveProperty("QUEUED");
+
+    const jobs = await app.inject({
+      method: "GET",
+      url: "/admin/jobs?state=QUEUED&limit=5",
+      headers: authed(adminToken),
+    });
+    expect(jobs.statusCode).toBe(200);
+    expect(Array.isArray(jobs.json().jobs)).toBe(true);
+    const first = jobs.json().jobs[0];
+    if (first) {
+      const detail = await app.inject({
+        method: "GET",
+        url: `/admin/jobs/${first.id}`,
+        headers: authed(adminToken),
+      });
+      expect(detail.statusCode).toBe(200);
+      expect(detail.json().id).toBe(first.id);
+    }
+    const missing = await app.inject({
+      method: "GET",
+      url: "/admin/jobs/00000000-0000-0000-0000-000000000000",
+      headers: authed(adminToken),
+    });
+    expect(missing.statusCode).toBe(404);
+
+    const audit = await app.inject({ method: "GET", url: "/admin/audit", headers: authed(adminToken) });
+    expect(audit.statusCode).toBe(200);
+
+    const issued = await app.inject({
+      method: "POST",
+      url: "/admin/tokens",
+      headers: authed(adminToken),
+      payload: { name: "to-disable", scopes: ["*:*"] },
+    });
+    const disable = await app.inject({
+      method: "POST",
+      url: `/admin/tokens/${issued.json().caller.id}/disable`,
+      headers: authed(adminToken),
+    });
+    expect(disable.json()).toEqual({ ok: true });
+    const rejected = await app.inject({
+      method: "GET",
+      url: "/catalogue",
+      headers: authed(issued.json().token),
+    });
+    expect(rejected.statusCode).toBe(401);
+
+    const badToken = await app.inject({
+      method: "POST",
+      url: "/admin/tokens",
+      headers: authed(adminToken),
+      payload: { name: "", scopes: [] },
+    });
+    expect(badToken.statusCode).toBe(400);
+  });
+
+  it("admin lifecycle routes: validate, record-test, enable, disable", async () => {
+    const validate = await app.inject({
+      method: "POST",
+      url: "/admin/catalogue/lightreach.ntpDate/validate",
+      headers: authed(adminToken),
+    });
+    expect(validate.statusCode).toBe(200);
+
+    const unknown = await app.inject({
+      method: "POST",
+      url: "/admin/catalogue/nope.nothing/validate",
+      headers: authed(adminToken),
+    });
+    expect(unknown.statusCode).toBe(404);
+
+    const badBody = await app.inject({
+      method: "POST",
+      url: "/admin/catalogue/lightreach.ntpDate/clients/lgcyco/record-test",
+      headers: authed(adminToken),
+      payload: {},
+    });
+    expect(badBody.statusCode).toBe(400);
+
+    const noTest = await app.inject({
+      method: "POST",
+      url: "/admin/catalogue/lightreach.ntpDate/clients/lgcyco/record-test",
+      headers: authed(adminToken),
+      payload: { jobId: "00000000-0000-0000-0000-000000000000" },
+    });
+    expect(noTest.statusCode).toBe(422);
+
+    const enableRefused = await app.inject({
+      method: "POST",
+      url: "/admin/catalogue/lightreach.ntpDate/clients/lgcyco/enable",
+      headers: authed(adminToken),
+    });
+    expect(enableRefused.statusCode).toBe(422);
+
+    const disable = await app.inject({
+      method: "POST",
+      url: "/admin/catalogue/lightreach.ntpDate/clients/brandx/disable",
+      headers: authed(adminToken),
+    });
+    expect(disable.json()).toEqual({ ok: true });
+    // Re-enable brandx for other tests in this file.
+    await db.pool.query(
+      `update action_clients set state = 'live' where use_case = 'lightreach.ntpDate' and client = 'brandx'`,
+    );
+
+    const canary503 = await app.inject({
+      method: "POST",
+      url: "/admin/canaries/run",
+      headers: authed(adminToken),
+    });
+    expect(canary503.statusCode).toBe(503); // no scheduler wired in this fixture
+  });
+
   it("admin catalogue lists lifecycle state per pair", async () => {
     const res = await app.inject({
       method: "GET",
