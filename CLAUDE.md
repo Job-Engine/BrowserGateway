@@ -39,56 +39,48 @@ variables; self-hosted Stagehand, never hosted Browserbase agents; async + poll;
 the trust boundary is the gateway process; extract schemas are locked per action and
 never overridden per client; read-only, enforced in code by a method allowlist.
 
-## Where the code stands right now
+## Where the code stands right now (updated 2026-07-13)
 
-Current (v1 prototype): `src/` is a working generic agent (BrowserAgent port,
-ReAct loop, redaction, Stagehand adapter). `src/gateway/` is a single-tenant
-prototype: one portal, no `client` dimension, in-memory job store, shared static
-token, no queue, no gateway-layer tests. It runs via `npm run gateway` (node:http).
+v2 is built and green on branch `feat/gateway-v2`. STAB, MVP, WL, and OPS epics
+are done: TypeScript 5.9 pinned, hosted-agent path deleted, C1/C2/C3, S1-S6,
+M1-M5 fixed with tests; the four sanctioned core changes applied (sessionId
+from the adapter, wall-clock timeout, one free re-plan on observe failure,
+read-only method allowlist). `src/gateway/` is the v2 shell: Fastify, Postgres
+job store + skip-locked queue (caps, deadlines, per-credential serialization),
+per-caller hashed scoped tokens, pino redaction, lifecycle registry with the
+first-live-run rule, canaries, cost columns, admin API, `GET /openapi.json`,
+and `packages/gateway-client` (typed SDK). 116+ tests, coverage gate 80 percent
+on `src/gateway` (actual ~93). Run: `docker compose up -d`, `.env` from example,
+`npm run gateway`.
 
-Target (v2): defined in the architecture review. Adds the client dimension,
-Fastify, Postgres job store + skip-locked queue with caps and deadlines, per-caller
-scoped tokens, pino, canaries, cost tracking, admin API, React 19 console.
+The Phase 1 spec lives in the local clone `~/Desktop/product-ops-planning` on
+branch `browser-automation-gateway-spec` (32 stories, 5 epics, traceability in
+project.md). NOT pushed; awaiting user review.
 
-Do not replicate these known v1 defects: OTP cached past its 30s life (C1);
-unbounded fire-and-forget jobs with no wall-clock timeout (C2); unbounded in-memory
-job map (C3); no ownership check on `GET /jobs/:id` (S1); OTP goal text gated on the
-unrelated `projectId` field (M1); `op` subprocess inheriting the full env (M2).
+## Outstanding (blocked or in flight)
 
-## Folder state notes (observed this handoff)
+1. First live LightReach run: blocked on credentials. `.env` exists at the repo
+   root with TODO markers; once filled, run a known-record job, correct the
+   assumed "NTP Date" label and login/search flow in `catalogue.ts` and
+   `docs/lightreach-ntp-agent.md`, then walk the lifecycle
+   (validate, record-test, enable) via the admin API.
+2. Admin console (`admin-web/`, CON epic) per `admin-console-v2.html`.
+3. Push the spec branch in product-ops-planning after user approval.
+4. Definition-of-done items needing live creds: two-client live runs,
+   restart-mid-job check.
 
-- Authoritative planning artifacts live in `BrowserGateway/`. The `-v2` files are
-  current; the non-v2 `architecture-explorer.html` / `admin-console-mockup.html`
-  and `general-architecture-review.docx` are earlier versions.
-- Duplicates of some artifacts also sit at the repo root
-  (`admin-console-mockup.html`, `architecture-explorer.html`,
-  `general-architecture-review.docx`). Treat `BrowserGateway/` as canonical; these
-  root copies can be removed.
-- `BrowserGateway/Dev/` is an almost-empty scaffold (just `.remember/`); no code yet.
-- `ipsilon-redesign-brief.md` at the root appears unrelated to the gateway; treat as
-  out of scope unless told otherwise.
-- The hosted-agent path (`src/lightreachAgent.ts`, `examples/lightreach-server.ts`,
-  the hosted half of `docs/lightreach-ntp-agent.md`) is scheduled for deletion. Do
-  not extend it.
+## Folder state notes
 
-## Do this first (Phase 0, in THIS repo, before the big rebuild)
+- Authoritative planning artifacts live in `BrowserGateway/` (`-v2` files are
+  current). Root duplicates were removed.
+- `ipsilon-redesign-brief.md` at the root is unrelated; out of scope.
+- `BrowserGateway/Dev/` holds only session memory (`.remember/`), no code.
+- Postgres for dev/tests comes from `docker-compose.yml` (port 5433); tests
+  create a throwaway database per file.
 
-These de-risk everything and are independent of the planning repo:
-
-1. Pin TypeScript to a stable 5.x line (the repo currently pins a preview 7.x that
-   has never compiled here), then get `npm run typecheck` green.
-2. Delete the hosted-agent path; fold its system-prompt procedure text into the
-   LightReach catalogue entry's goal.
-3. Fix C1 (never cache OTP), M1 (gate OTP goal text on the credential having an OTP
-   field, not on `projectId`), and M2 (pass a minimal env to the `op` child process).
-4. Do the first live LightReach run against a known record and correct the assumed
-   field label ("NTP Date") and login/search flow in the catalogue. This is the
-   cheapest de-risking available; do it before building the shell.
-
-Then follow the two-phase process in `claude-code-instructions.md`: write the spec
-in `product-ops-planning` (Phase 1, approval gate), then build epics STAB -> MVP ->
-WL -> OPS -> CON here (Phase 2). If you do not have access to the product-ops-planning
-repo, still do Phase 0 above and flag the missing access rather than skipping the spec.
+The two-phase process from `claude-code-instructions.md` (spec in
+product-ops-planning, then build STAB -> MVP -> WL -> OPS -> CON here) has been
+executed through OPS; CON and the live validation remain (see Outstanding above).
 
 ## House stack and hard rules
 
