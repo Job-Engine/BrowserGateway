@@ -151,10 +151,13 @@ export const CATALOGUE: Record<string, CatalogueEntry> = {
         'On a verified record, locate the "NTP Date" field and read its value exactly as shown.',
         "If the field exists but is blank, treat the value as null and note it; if the field cannot be found, report that explicitly.",
       ].join(" "),
-    // Client roster. Overrides are placeholders pending the first live run
-    // per client; the credential items must exist in 1Password as
-    // lightreach.<client> before a client can serve traffic.
+    // Client roster. spartan is the first real client; its 1Password item
+    // keeps its human title, referenced explicitly. lgcyco/brandx are
+    // placeholders pending onboarding (items lightreach.<client>).
     clients: {
+      spartan: {
+        credentialItem: "Lightreach - Spartan",
+      },
       lgcyco: {},
       brandx: {
         labelMap: { "NTP Date": "Notice to Proceed" },

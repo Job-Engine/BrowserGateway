@@ -81,7 +81,7 @@ describe("registry seed and lifecycle (OPS)", () => {
     await registry.seed();
     const pairs = await registry.listCatalogue();
     const ours = pairs.filter((p) => p.useCase === USE_CASE);
-    expect(ours.map((p) => p.client).sort()).toEqual(["brandx", "default", "lgcyco"]);
+    expect(ours.map((p) => p.client).sort()).toEqual(["brandx", "default", "lgcyco", "spartan"]);
     expect(ours.every((p) => p.clientState === "disabled")).toBe(true);
     expect(ours[0].actionState).toBe("draft");
   });
