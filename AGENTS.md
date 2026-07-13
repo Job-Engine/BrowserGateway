@@ -91,7 +91,7 @@ Fixed in STAB (do not regress): TOTP is never cached (username/password keep a 6
 | `src/browser.ts`                     | Stagehand v3 adapter (Browserbase or local)                                 |
 | `src/loop.ts`                        | The agent loop: plan, observe, classify, act, extract; redaction lives here |
 | `src/planner.ts`                     | LLM planning step (via extract); sees variable names, never values          |
-| `src/risk.ts`                        | Risk keyword classifier (being replaced by a method allowlist in v2)        |
+| `src/risk.ts`                        | Risk keyword classifier (CLI confirm flow only; gateway runs use the code-enforced method allowlist) |
 | `src/index.ts`                       | `runAgent()` entry; never throws for operational failures                   |
 | `src/gateway/catalogue.ts`           | useCase registry: portal, url, schemas, buildGoal                           |
 | `src/gateway/secrets.ts`             | JIT 1Password resolution, 60s cache, env fallback                           |

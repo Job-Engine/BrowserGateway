@@ -33,7 +33,24 @@ export interface ActionRecord {
   message?: string;
 }
 
-export type AgentStatus = "completed" | "blocked" | "aborted" | "max_steps" | "error";
+export type AgentStatus = "completed" | "blocked" | "aborted" | "max_steps" | "timeout" | "error";
+
+/**
+ * Safe Stagehand act methods for read-only catalogue entries. Enforced in code
+ * by the loop's method allowlist; destructive verbs (upload, drag, download,
+ * form submission helpers) are absent. Compared case-insensitively.
+ */
+export const READ_ONLY_METHODS = [
+  "click",
+  "fill",
+  "type",
+  "press",
+  "selectoption",
+  "selectoptionfromdropdown",
+  "scroll",
+  "scrollto",
+  "hover",
+] as const;
 
 export type AgentEvent =
   | { type: "step_start"; step: number }
@@ -56,6 +73,13 @@ export interface RunAgentOptions {
   extractSchema?: z.ZodType;
   model?: string;
   maxSteps?: number;
+  /** Hard wall-clock budget for the whole run; exceeding it returns status "timeout". */
+  timeoutMs?: number;
+  /**
+   * When set, replaces the risk classifier + confirm gate: only these act
+   * methods may execute, anything else is blocked fail-closed in code.
+   */
+  allowedMethods?: readonly string[];
   context?: { id: string; persist?: boolean };
   signal?: AbortSignal;
   onEvent?: (event: AgentEvent) => void;
@@ -68,6 +92,8 @@ export interface AgentRunResult {
   actionsLog: ActionRecord[];
   extractedData?: unknown;
   sessionReplayUrl?: string;
+  /** Browserbase session ID, straight from the adapter. */
+  sessionId?: string;
   stepsUsed: number;
   error?: { message: string; step?: number };
 }
@@ -78,6 +104,8 @@ export interface AgentRunResult {
  */
 export interface BrowserAgent {
   readonly sessionReplayUrl?: string;
+  /** Browserbase session ID (undefined for LOCAL runs). */
+  readonly sessionId?: string;
   goto(url: string): Promise<void>;
   observe(instruction: string, variables?: Record<string, string>): Promise<ObservedAction[]>;
   act(action: ObservedAction, variables?: Record<string, string>): Promise<ActOutcome>;

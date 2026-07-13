@@ -37,9 +37,10 @@ function buildSummary(result: LoopResult): string {
   const last = result.actionsLog.at(-1);
   const phrases: Record<LoopResult["status"], string> = {
     completed: "Goal completed",
-    blocked: "Stopped: a risky action was not approved",
+    blocked: "Stopped: an action was not approved",
     aborted: "Aborted before completion",
     max_steps: "Stopped after reaching the step limit",
+    timeout: "Stopped: wall-clock timeout exceeded",
     error: "Stopped due to an error",
   };
   const parts = [
@@ -79,8 +80,16 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
     };
   }
 
+  // Wall-clock budget: abort the loop at the deadline and, if it is stuck
+  // inside a browser or LLM call, race past it with a synthetic timeout result.
+  const controller = new AbortController();
+  const onOuterAbort = () => controller.abort();
+  options.signal?.addEventListener("abort", onOuterAbort, { once: true });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
+
   try {
-    const result = await runLoop({
+    const loopPromise = runLoop({
       agent,
       url: options.url,
       goal: options.goal,
@@ -89,12 +98,43 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
       onBeforeAction: options.onBeforeAction,
       classifyRiskFn: options.classifyRisk,
       extractSchema: options.extractSchema,
+      allowedMethods: options.allowedMethods,
       maxSteps,
       maxObserveRetries: 2,
       maxConsecutiveFailures: 3,
-      signal: options.signal,
+      signal: controller.signal,
       onEvent: options.onEvent,
     });
+
+    let result: LoopResult;
+    if (options.timeoutMs) {
+      const timeoutResult = new Promise<LoopResult>((resolve) => {
+        timer = setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+          resolve({
+            status: "timeout",
+            actionsLog: [],
+            stepsUsed: 0,
+            error: { message: `run exceeded wall-clock timeout of ${options.timeoutMs}ms` },
+          });
+        }, options.timeoutMs);
+      });
+      result = await Promise.race([loopPromise, timeoutResult]);
+      // The losing loop promise must not surface as an unhandled rejection.
+      loopPromise.catch(() => {});
+    } else {
+      result = await loopPromise;
+    }
+    if (timedOut && result.status === "aborted") {
+      result = {
+        ...result,
+        status: "timeout",
+        error: result.error ?? {
+          message: `run exceeded wall-clock timeout of ${options.timeoutMs}ms`,
+        },
+      };
+    }
     return {
       success: result.status === "completed",
       status: result.status,
@@ -102,6 +142,7 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
       actionsLog: result.actionsLog,
       extractedData: result.extractedData,
       sessionReplayUrl: agent.sessionReplayUrl,
+      sessionId: agent.sessionId,
       stepsUsed: result.stepsUsed,
       error: result.error,
     };
@@ -113,9 +154,12 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
       actionsLog: [],
       stepsUsed: 0,
       sessionReplayUrl: agent.sessionReplayUrl,
+      sessionId: agent.sessionId,
       error: { message: errMsg(e) },
     };
   } finally {
+    if (timer) clearTimeout(timer);
+    options.signal?.removeEventListener("abort", onOuterAbort);
     await agent.close().catch(() => {});
   }
 }

@@ -1,7 +1,11 @@
-import { runAgent, autoApprove } from "../index.js";
+import { runAgent } from "../index.js";
+import { READ_ONLY_METHODS } from "../types.js";
 import type { CatalogueEntry } from "./catalogue.js";
 import { resolvePortalCredentials } from "./secrets.js";
 import type { JobEnvelope, JobError, JobStatus } from "./types.js";
+
+/** Hard per-run wall-clock budget until per-entry timeouts arrive with the v2 catalogue. */
+const RUN_TIMEOUT_MS = 300_000;
 
 function sessionIdFromUrl(url?: string): string | undefined {
   if (!url) return undefined;
@@ -81,8 +85,7 @@ export async function runJob(
   }
 
   // 3. Drive the browser (self-hosted Stagehand via the web-action-agent loop).
-  //    autoApprove: headless service, so risky steps (login submit) are auto-approved.
-  //    The catalogue goals are read-only after login; tighten per-entry if needed.
+  //    Read-only is enforced in code: only allowlisted act methods may run (S3).
   //    M1: the OTP step follows the resolved credential, not any input field.
   const result = await runAgent({
     url: entry.url,
@@ -90,10 +93,12 @@ export async function runJob(
     data: input,
     credentials,
     extractSchema: entry.extractSchema,
-    onBeforeAction: autoApprove,
+    allowedMethods: READ_ONLY_METHODS,
+    timeoutMs: RUN_TIMEOUT_MS,
   });
 
   const sessionUrl = result.sessionReplayUrl;
+  const sessionId = result.sessionId;
   const extracted = result.extractedData;
 
   // 4. Normalize outcome.
@@ -101,14 +106,27 @@ export async function runJob(
     return base({
       status: "error",
       sessionUrl,
+      sessionId,
       error: { code: "RUN_ERROR", message: result.error?.message ?? result.summary },
+    });
+  }
+  if (result.status === "timeout") {
+    return base({
+      status: "error",
+      sessionUrl,
+      sessionId,
+      error: { code: "TIMEOUT", message: "The run exceeded its wall-clock timeout." },
     });
   }
   if (result.status === "blocked") {
     return base({
       status: "error",
       sessionUrl,
-      error: { code: "ACTION_BLOCKED", message: "A risky action was not approved." },
+      sessionId,
+      error: {
+        code: "ACTION_BLOCKED",
+        message: "An action outside the read-only method allowlist was blocked.",
+      },
     });
   }
 
@@ -119,6 +137,7 @@ export async function runJob(
     return base({
       status: "failure",
       sessionUrl,
+      sessionId,
       data: extracted,
       error: {
         code: "MATCH_FAILED",
@@ -131,6 +150,7 @@ export async function runJob(
     return base({
       status: "failure",
       sessionUrl,
+      sessionId,
       data: extracted,
       error: {
         code: "NTP_FIELD_NOT_FOUND",
@@ -143,6 +163,7 @@ export async function runJob(
   return base({
     status: result.success ? "success" : "failure",
     sessionUrl,
+    sessionId,
     data: extracted,
     error: result.success ? undefined : { code: "GOAL_NOT_COMPLETED", message: result.summary },
   });

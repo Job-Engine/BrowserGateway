@@ -51,6 +51,9 @@ export async function createSession(config: CreateSessionConfig): Promise<Browse
     get sessionReplayUrl() {
       return stagehand.browserbaseSessionURL;
     },
+    get sessionId() {
+      return stagehand.browserbaseSessionID;
+    },
     async goto(url: string) {
       await page.goto(url);
     },
