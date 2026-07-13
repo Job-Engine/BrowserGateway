@@ -86,9 +86,9 @@ describe("resolveAction (WL override merge)", () => {
   it("appends label mapping guidance to the goal without touching the base for others", () => {
     const brandx = resolveAction("lightreach.ntpDate", "brandx");
     const goal = brandx.buildGoal(input, { hasOtp: false });
-    expect(goal).toContain("Notice to Proceed");
+    expect(goal).toContain('appears as "Timeline"');
     const base = resolveAction("lightreach.ntpDate", "default").buildGoal(input, { hasOtp: false });
-    expect(base).not.toContain("Notice to Proceed");
+    expect(base).not.toContain("Timeline");
   });
 
   it("never overrides the extract schema: the resolved schema is the base object", () => {

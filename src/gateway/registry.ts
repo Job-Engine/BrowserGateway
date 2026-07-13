@@ -217,9 +217,7 @@ export function createRegistry(pool: pg.Pool) {
       );
     },
 
-    async listAudit(
-      limit = 100,
-    ): Promise<
+    async listAudit(limit = 100): Promise<
       Array<{
         id: string;
         actor: string;

@@ -59,6 +59,9 @@ export async function main(): Promise<void> {
     config: {
       globalCap: intEnv("GATEWAY_GLOBAL_CAP", 3),
       defaultPlatformCap: intEnv("GATEWAY_PLATFORM_CAP", 2),
+      // Must exceed the largest per-client runner timeout or the reaper
+      // kills healthy runs.
+      runDeadlineMs: intEnv("GATEWAY_RUN_DEADLINE_MS", 660_000),
       costPerStepUsd: Number(process.env.GATEWAY_COST_PER_STEP_USD ?? 0) || 0,
     },
   });

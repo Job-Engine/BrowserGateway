@@ -101,6 +101,10 @@ export async function runLoop(params: LoopParams): Promise<LoopResult> {
           `From the current page, extract the data relevant to this goal: ${goal}`,
           params.extractSchema,
         );
+        // The envelope contract promises data shaped by the locked schema;
+        // strip any extra keys the extraction backend tacks on.
+        const parsed = params.extractSchema.safeParse(extractedData);
+        if (parsed.success) extractedData = parsed.data;
       } catch {
         extractedData = undefined;
       }

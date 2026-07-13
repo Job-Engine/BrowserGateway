@@ -10,6 +10,12 @@ export interface CreateSessionConfig {
   context?: { id: string; persist?: boolean };
   headless?: boolean;
   verbose?: 0 | 1 | 2;
+  /**
+   * Browserbase session lease in seconds. Their default (~300s) kills the
+   * browser mid-run for anything slower; must cover the run's wall-clock
+   * budget plus margin.
+   */
+  sessionTimeoutSeconds?: number;
 }
 
 export async function createSession(config: CreateSessionConfig): Promise<BrowserAgent> {
@@ -27,6 +33,7 @@ export async function createSession(config: CreateSessionConfig): Promise<Browse
           projectId,
           browserbaseSessionCreateParams: {
             projectId: projectId ?? "",
+            ...(config.sessionTimeoutSeconds ? { timeout: config.sessionTimeoutSeconds } : {}),
             ...(config.context
               ? {
                   browserSettings: {
@@ -47,13 +54,14 @@ export async function createSession(config: CreateSessionConfig): Promise<Browse
   await stagehand.init();
   const page = stagehand.context.pages()[0] ?? (await stagehand.context.newPage());
 
+  // Captured once: the live getters return undefined after the CDP transport
+  // dies, which would strip the replay URL from timeout envelopes.
+  const sessionReplayUrl = stagehand.browserbaseSessionURL;
+  const sessionId = stagehand.browserbaseSessionID;
+
   return {
-    get sessionReplayUrl() {
-      return stagehand.browserbaseSessionURL;
-    },
-    get sessionId() {
-      return stagehand.browserbaseSessionID;
-    },
+    sessionReplayUrl,
+    sessionId,
     async goto(url: string) {
       await page.goto(url);
     },

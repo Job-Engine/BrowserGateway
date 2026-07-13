@@ -119,11 +119,22 @@ const lightreachInput = z.object({
 });
 
 const lightreachExtract = z.object({
-  matchVerified: z.boolean(),
-  matchedName: z.string().nullable(),
-  matchedAddress: z.string().nullable(),
-  ntpDateFound: z.boolean(),
-  ntpDate: z.string().nullable(),
+  matchVerified: z
+    .boolean()
+    .describe("True only if the record's customer name AND service address both match the input"),
+  matchedName: z.string().nullable().describe("Customer name exactly as shown on the record"),
+  matchedAddress: z.string().nullable().describe("Service address exactly as shown on the record"),
+  ntpDateFound: z
+    .boolean()
+    .describe(
+      "True when the Notice to Proceed milestone or an NTP Date field is visible on the record, even if it shows no date yet",
+    ),
+  ntpDate: z
+    .string()
+    .nullable()
+    .describe(
+      "The calendar date displayed for the Notice to Proceed milestone, exactly as shown. Null when no date is displayed (meaning the NTP is not complete yet). NEVER a status word like Submitted or Granted.",
+    ),
 });
 
 export const CATALOGUE: Record<string, CatalogueEntry> = {
@@ -148,8 +159,8 @@ export const CATALOGUE: Record<string, CatalogueEntry> = {
         "Open the matching record. Before trusting it, VERIFY the match: the record's customer name AND service address must both correspond to %name% and %address%.",
         "Minor formatting differences (case, abbreviations like St vs Street, unit spacing) are acceptable; a different person or a different street address is NOT a match.",
         "If no confident name and address match is found, stop; do not read fields from a record you could not verify.",
-        'On a verified record, locate the "NTP Date" field and read its value exactly as shown.',
-        "If the field exists but is blank, treat the value as null and note it; if the field cannot be found, report that explicitly.",
+        'On a verified record, read the NTP (Notice to Proceed) date: it is the date shown next to the "Notice to Proceed" milestone at the top of the record\'s Progress Tracker. A banner may also say "Notice to Proceed Granted". It may also appear as a field labeled "NTP Date".',
+        "If the milestone or field exists but shows no date, treat the value as null and note it; if neither can be found, report that explicitly.",
       ].join(" "),
     // Client roster. spartan is the first real client; its 1Password item
     // keeps its human title, referenced explicitly. lgcyco/brandx are
@@ -157,10 +168,13 @@ export const CATALOGUE: Record<string, CatalogueEntry> = {
     clients: {
       spartan: {
         credentialItem: "Lightreach - Spartan",
+        // First live runs measured ~15-20s per agent step; login + search +
+        // verify + read needs more than the 300s default.
+        timeoutMs: 600_000,
       },
       lgcyco: {},
       brandx: {
-        labelMap: { "NTP Date": "Notice to Proceed" },
+        labelMap: { "Progress Tracker": "Timeline" },
       },
     },
   },

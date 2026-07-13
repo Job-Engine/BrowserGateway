@@ -290,7 +290,11 @@ describe("GET /openapi.json and admin surface", () => {
   });
 
   it("admin stats, jobs listing, job detail, audit, and token disable all respond", async () => {
-    const stats = await app.inject({ method: "GET", url: "/admin/stats", headers: authed(adminToken) });
+    const stats = await app.inject({
+      method: "GET",
+      url: "/admin/stats",
+      headers: authed(adminToken),
+    });
     expect(stats.statusCode).toBe(200);
     expect(stats.json().jobs).toHaveProperty("QUEUED");
 
@@ -318,7 +322,11 @@ describe("GET /openapi.json and admin surface", () => {
     });
     expect(missing.statusCode).toBe(404);
 
-    const audit = await app.inject({ method: "GET", url: "/admin/audit", headers: authed(adminToken) });
+    const audit = await app.inject({
+      method: "GET",
+      url: "/admin/audit",
+      headers: authed(adminToken),
+    });
     expect(audit.statusCode).toBe(200);
 
     const issued = await app.inject({

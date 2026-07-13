@@ -68,6 +68,10 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
       env,
       model: options.model ?? DEFAULT_MODEL,
       context: options.context,
+      // The Browserbase session must outlive the run's wall-clock budget.
+      sessionTimeoutSeconds: options.timeoutMs
+        ? Math.ceil(options.timeoutMs / 1000) + 120
+        : undefined,
     });
   } catch (e) {
     return {

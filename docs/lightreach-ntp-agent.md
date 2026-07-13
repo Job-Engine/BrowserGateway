@@ -66,6 +66,20 @@ Envelope mapping (`src/gateway/runner.ts`): `matchVerified=false` becomes a
 
 ## Validation status
 
-The field label "NTP Date" and the login/search flow are assumptions pending
-the first live run against a known record. Correct this file and the catalogue
-entry from what the replay shows.
+Validated live on 2026-07-14 against two known Spartan records (one with NTP
+complete, one without). Observed portal reality, now encoded in the goal and
+extract schema descriptions:
+
+- Login is a plain email/username + password form; no 2FA on the Spartan item.
+- Search is a single accounts search box; typing the customer name lists
+  matching rows with a status column.
+- There is no field literally labeled "NTP Date". The value is the date shown
+  next to the "Notice to Proceed" milestone at the top of the record's
+  Progress Tracker. When the NTP is not complete, no date is displayed:
+  the correct envelope is success with `ntpDate: null` (callers read null as
+  "NTP not done yet"). Status words like "Submitted" are never the value.
+- A run takes 5 to 6 agent steps, roughly 80 to 100 seconds. The Browserbase
+  session lease must outlive the run (`sessionTimeoutSeconds`, wired from the
+  run's `timeoutMs`); their default ~300s lease kills slower runs mid-flight.
+- Records list an "Ext. Reference" number usable for disambiguation when two
+  customers share a name.
