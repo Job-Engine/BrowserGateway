@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Browser Automation Gateway - Architecture Explorer</title>
+<style>
+  :root {
+    --bg: #f7f6f3;
+    --surface: #ffffff;
+    --surface2: #f0efeb;
+    --text: #1a1a18;
+    --text2: #6b6a66;
+    --border: #dedcd5;
+    --accent: #2563eb;
+    --accent-soft: #dbeafe;
+    --amber: #b45309;
+    --amber-soft: #fef3c7;
+    --gray-soft: #e7e5e0;
+    --green: #15803d;
+    --red: #b91c1c;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161513;
+      --surface: #201f1c;
+      --surface2: #2a2926;
+      --text: #ecebe7;
+      --text2: #a3a29c;
+      --border: #3a3936;
+      --accent: #60a5fa;
+      --accent-soft: #1e3a5f;
+      --amber: #fbbf24;
+      --amber-soft: #4a3510;
+      --gray-soft: #33322f;
+      --green: #4ade80;
+      --red: #f87171;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.5; padding: 24px; max-width: 1200px; margin: 0 auto;
+  }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  .sub { color: var(--text2); font-size: 14px; margin-bottom: 20px; }
+  nav { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 20px; }
+  nav button {
+    background: var(--surface); color: var(--text2); border: 1px solid var(--border);
+    padding: 8px 14px; border-radius: 8px; font-size: 13.5px; cursor: pointer; font-weight: 500;
+  }
+  nav button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  nav button:hover:not(.active) { border-color: var(--accent); color: var(--text); }
+  .tab { display: none; }
+  .tab.active { display: block; }
+  .layout { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+  .map-wrap { flex: 1 1 520px; min-width: 380px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px; }
+  .panel { flex: 1 1 320px; min-width: 300px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  .panel h2 { font-size: 17px; margin-bottom: 2px; }
+  .panel .tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 99px; margin-bottom: 10px; }
+  .tag.internal { background: var(--accent-soft); color: var(--accent); }
+  .tag.external { background: var(--amber-soft); color: var(--amber); }
+  .tag.edge { background: var(--gray-soft); color: var(--text2); }
+  .panel .summary { font-size: 14px; color: var(--text2); margin-bottom: 14px; }
+  .panel h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text2); margin: 14px 0 6px; }
+  .panel ul { list-style: none; }
+  .panel li { font-size: 13.5px; padding: 3px 0 3px 16px; position: relative; }
+  .panel li::before { content: ""; position: absolute; left: 2px; top: 11px; width: 6px; height: 6px; border-radius: 2px; background: var(--accent); opacity: 0.6; }
+  pre {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px; font-family: var(--mono); font-size: 12px; overflow-x: auto;
+    margin: 8px 0; line-height: 1.55; color: var(--text);
+  }
+  code { font-family: var(--mono); font-size: 0.92em; background: var(--surface2); padding: 1px 5px; border-radius: 4px; }
+  pre code { background: none; padding: 0; }
+  svg { width: 100%; height: auto; display: block; }
+  .node rect { fill: var(--surface2); stroke: var(--border); stroke-width: 1.2; cursor: pointer; transition: all 0.15s; }
+  .node.internal rect { fill: var(--accent-soft); stroke: var(--accent); stroke-opacity: 0.45; }
+  .node.external rect { fill: var(--amber-soft); stroke: var(--amber); stroke-opacity: 0.45; }
+  .node text { pointer-events: none; }
+  .node .nt { font-size: 13px; font-weight: 600; fill: var(--text); }
+  .node .ns { font-size: 11px; fill: var(--text2); }
+  .node:hover rect { stroke-width: 2.2; }
+  .node.selected rect, .node.lit rect { stroke-width: 2.4; stroke-opacity: 1; }
+  .node.dim { opacity: 0.35; }
+  .edge { stroke: var(--text2); stroke-width: 1.5; fill: none; opacity: 0.65; }
+  .edge.lit { stroke: var(--accent); stroke-width: 2.5; opacity: 1; }
+  .edge.dim { opacity: 0.15; }
+  .elabel { font-size: 10.5px; fill: var(--text2); }
+  .container-box { fill: none; stroke: var(--border); stroke-width: 1; stroke-dasharray: 5 4; rx: 14; }
+  .container-label { font-size: 11px; fill: var(--text2); font-weight: 600; letter-spacing: 0.04em; }
+  .stepper { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; flex: 1 1 320px; min-width: 300px; }
+  .step-count { font-size: 12px; color: var(--text2); font-weight: 600; margin-bottom: 6px; }
+  .stepper h2 { font-size: 17px; margin-bottom: 8px; }
+  .stepper p { font-size: 14px; color: var(--text2); margin-bottom: 16px; min-height: 84px; }
+  .step-btns { display: flex; gap: 8px; }
+  .step-btns button {
+    background: var(--accent); color: #fff; border: none; padding: 8px 16px;
+    border-radius: 8px; font-size: 13.5px; cursor: pointer; font-weight: 500;
+  }
+  .step-btns button.ghost { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  .step-btns button:disabled { opacity: 0.4; cursor: default; }
+  .dots { display: flex; gap: 5px; margin-top: 16px; flex-wrap: wrap; }
+  .dot { width: 22px; height: 6px; border-radius: 3px; background: var(--border); cursor: pointer; }
+  .dot.on { background: var(--accent); }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+  .card h3.ch { font-size: 15px; margin-bottom: 6px; text-transform: none; letter-spacing: 0; color: var(--text); }
+  .card .num { display: inline-flex; width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: #fff; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; margin-bottom: 8px; }
+  .card p { font-size: 13.5px; color: var(--text2); margin-bottom: 8px; }
+  .note { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 8px; padding: 12px 16px; font-size: 13.5px; color: var(--text2); margin: 16px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin: 8px 0 16px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text2); }
+  .pill { font-weight: 600; }
+  .pill.ok { color: var(--green); }
+  .pill.warn { color: var(--amber); }
+  .pill.bad { color: var(--red); }
+  .section-title { font-size: 17px; margin: 22px 0 10px; }
+  .tab > .section-title:first-child { margin-top: 0; }
+</style>
+</head>
+<body>
+
+<h1>Browser Automation Gateway</h1>
+<p class="sub">A general internal service: apps send <code>{useCase, client, input}</code>, the gateway resolves the action from the catalogue, the login from 1Password (one item per platform + client, whitelabel-aware), runs the browser on Browserbase, and returns one normalized envelope. LightReach is the first platform, not the boundary.</p>
+
+<nav id="nav">
+  <button data-tab="arch" class="active">Architecture</button>
+  <button data-tab="life">Request lifecycle</button>
+  <button data-tab="cat">Catalogue</button>
+  <button data-tab="add">Add platform / client</button>
+  <button data-tab="op">1Password</button>
+  <button data-tab="api">API</button>
+</nav>
+
+<!-- ARCHITECTURE -->
+<div class="tab active" id="tab-arch">
+  <div class="layout">
+    <div class="map-wrap"><div id="map-arch"></div></div>
+    <div class="panel" id="detail-panel"></div>
+  </div>
+</div>
+
+<!-- LIFECYCLE -->
+<div class="tab" id="tab-life">
+  <div class="layout">
+    <div class="map-wrap"><div id="map-life"></div></div>
+    <div class="stepper">
+      <div class="step-count" id="step-count"></div>
+      <h2 id="step-title"></h2>
+      <p id="step-desc"></p>
+      <div class="step-btns">
+        <button class="ghost" id="prev-btn">Back</button>
+        <button id="next-btn">Next</button>
+      </div>
+      <div class="dots" id="dots"></div>
+    </div>
+  </div>
+</div>
+
+<!-- CATALOGUE -->
+<div class="tab" id="tab-cat">
+  <h2 class="section-title">The catalogue: platforms, actions, clients</h2>
+  <p class="sub">Three dimensions. A <strong>platform</strong> is a site the gateway can drive. An <strong>action</strong> is defined once per platform and owns the contract. A <strong>client</strong> is a whitelabel login on that platform, optionally with navigation overrides. The core (server, secrets, runner) stays generic.</p>
+
+  <div class="cards">
+    <div class="card">
+      <h3 class="ch">What one action contains</h3>
+      <table>
+        <tr><th>Field</th><th>Drives</th></tr>
+        <tr><td><code>key</code></td><td>Namespaced id, e.g. <code>lightreach.milestoneStatus</code></td></tr>
+        <tr><td><code>inputSchema</code></td><td>Zod validation, including variant enums like <code>milestone: enum(NTP, PTO, Install, Permit)</code></td></tr>
+        <tr><td><code>buildGoal(input)</code></td><td>Natural language goal with business data and variant merged in</td></tr>
+        <tr><td><code>extractSchema</code></td><td>Shape of <code>data</code> in the envelope. Locked: clients can never override it</td></tr>
+        <tr><td><code>url, requiresLogin</code></td><td>Base start page and credential behavior</td></tr>
+        <tr><td><code>risk, timeout, attempts</code></td><td>Per-action tightening of runner policy</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h3 class="ch">Example: lightreach.milestoneStatus</h3>
+<pre><code>"lightreach.milestoneStatus": {
+  url: "https://palmetto.finance/accounts",
+  requiresLogin: true,
+  inputSchema: z.object({
+    name: z.string(),
+    address: z.string(),
+    projectId: z.string().optional(),
+    milestone: z.enum(
+      ["NTP","PTO","Install","Permit"]),
+  }),
+  extractSchema: { milestone, value,
+    matchVerified, matchedName, ... },
+  buildGoal: (i) =>
+    `Look up ${i.name} at ${i.address}.
+     Verify name AND address.
+     Read the ${i.milestone} status
+     field exactly. Read-only.`,
+}</code></pre>
+      <p>One action covers every milestone. A new milestone is one enum value, not a new entry.</p>
+    </div>
+    <div class="card">
+      <h3 class="ch">Client overrides (whitelabel)</h3>
+      <p>Each platform carries a client roster. A client may override navigation only:</p>
+<pre><code>clients: {
+  lgcyco:  {},                // base
+  brandx:  { overrides: {
+    milestoneStatus: {
+      labels: { "NTP Date":
+        "Notice to Proceed Date" },
+      hints: "Status fields live in
+        the right-hand rail.",
+    }}},
+  voltic:  { overrides: {
+    milestoneStatus: { url:
+      "https://voltic.palmetto..." }}},
+}</code></pre>
+      <p>Merged at job time: base action + client override = effective run config. <strong>extractSchema never merges</strong>; callers get one shape per action, always.</p>
+    </div>
+    <div class="card">
+      <h3 class="ch">How resolution works</h3>
+      <p>1. Caller posts <code>{useCase, client, input}</code>.</p>
+      <p>2. <code>getEntry(useCase)</code> finds the action; unknown key fails fast.</p>
+      <p>3. <code>inputSchema</code> validates input including the variant enum.</p>
+      <p>4. Credentials resolve from <code>op://&lt;vault&gt;/&lt;platform&gt;.&lt;client&gt;</code>.</p>
+      <p>5. <code>buildGoal(input)</code> plus override labels/hints become the agent instruction.</p>
+      <p>The escape hatch: if a client's layout diverges so far that even the data shape changes, that is a new action, not an override, with the client pinned to it.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ADD PLATFORM / CLIENT -->
+<div class="tab" id="tab-add">
+  <h2 class="section-title">Adding a platform, action, or client</h2>
+  <p class="sub">Three onboarding sizes. None of them touch server.ts, secrets.ts, or runner.ts.</p>
+
+  <div class="cards">
+    <div class="card">
+      <span class="num">1</span>
+      <h3 class="ch">New client on an existing platform</h3>
+      <p>The most common case: another whitelabel brand on a platform you already automate.</p>
+<pre><code>Vault:  Portals
+Item:   lightreach.newbrand
+Fields: username, password,
+        one-time password (2FA)</code></pre>
+      <p>Add the client to the platform's roster (with overrides only if its layout differs). No new action code. Callers pass <code>client: "newbrand"</code>.</p>
+    </div>
+    <div class="card">
+      <span class="num">2</span>
+      <h3 class="ch">New action on an existing platform</h3>
+      <p>One block in <code>catalogue.ts</code>: schemas, goal builder, risk and limits.</p>
+<pre><code>"lightreach.docsList": {
+  inputSchema: z.object({
+    name: z.string(),
+    address: z.string() }),
+  extractSchema: { documents: [...] },
+  buildGoal: (i) => `Open the verified
+    record's documents tab and list
+    every document. Read-only.`,
+}</code></pre>
+      <p>Every existing client can run it immediately; add overrides only where a brand's layout differs.</p>
+    </div>
+    <div class="card">
+      <span class="num">3</span>
+      <h3 class="ch">New platform</h3>
+      <p>Pick or create the domain vault, add one login item per client, then write the first action.</p>
+<pre><code>1. Vault (per domain):  GovSites
+2. Items: govnet.default, ...
+3. Service account scoped
+   to that vault only
+4. First action in catalogue.ts
+5. Deploy, live test vs a
+   known record</code></pre>
+    </div>
+    <div class="card">
+      <span class="num">4</span>
+      <h3 class="ch">Callers use it immediately</h3>
+<pre><code>curl -X POST $GW/jobs \
+ -H 'content-type: application/json' \
+ -d '{"useCase":
+        "lightreach.milestoneStatus",
+      "client": "newbrand",
+      "input": {
+        "name": "Jane Homeowner",
+        "address": "123 Solar Way...",
+        "milestone": "NTP" }}'</code></pre>
+      <p>Same envelope, same polling, same error codes. Caller scopes are granted per useCase x client.</p>
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>First live run rule:</strong> every new platform, action, or divergent-layout client gets tested against a known record before callers rely on it. Field labels and login flows are assumptions until a session replay proves them.
+  </div>
+</div>
+
+<!-- 1PASSWORD -->
+<div class="tab" id="tab-op">
+  <h2 class="section-title">Credentials: just-in-time from 1Password</h2>
+  <p class="sub">The container holds only service account tokens, one per vault. Everything else is fetched per run and thrown away. Whitelabel means one login item per platform + client pair.</p>
+
+  <div class="cards">
+    <div class="card">
+      <h3 class="ch">The flow, per job</h3>
+      <p>1. Runner asks <code>resolvePortalCredentials(platform, client)</code>.</p>
+      <p>2. secrets.ts checks its 60 second cache, keyed by platform + client.</p>
+      <p>3. On a miss: <code>op read op://&lt;vault&gt;/&lt;platform&gt;.&lt;client&gt;/username</code>, <code>/password</code>, and <code>/one-time password?attribute=otp</code> if present.</p>
+      <p>4. Values are injected as Stagehand variables: typed into the login form, never included in any LLM prompt, redacted in logs.</p>
+      <p>5. After the run they fall out of memory. Runs sharing a login are serialized so sessions never log each other out.</p>
+    </div>
+    <div class="card">
+      <h3 class="ch">Vault strategy</h3>
+      <p><strong>One vault per domain:</strong> finance portals in <code>Portals</code>, gov and utility sites in <code>GovSites</code>, and so on. Portals was first; it is not special.</p>
+      <p><strong>One item per login:</strong> named <code>platform.client</code> (lightreach.lgcyco, lightreach.brandx, ...). 5 to 7 clients per platform is the expected shape.</p>
+      <p><strong>One service account per vault:</strong> a leaked token exposes one domain, not every credential the company has.</p>
+      <p><strong>Never:</strong> the 1Password browser extension inside Browserbase sessions. It needs a persistent desktop app and cannot work in an ephemeral cloud browser.</p>
+    </div>
+    <div class="card">
+      <h3 class="ch">Why this beats the alternatives</h3>
+      <p><strong>vs env vars per login:</strong> 7 clients x 10 platforms = 70+ credential pairs. Env vars cannot manage that; the vault can. Rotation without redeploys, audit trail included.</p>
+      <p><strong>vs storing creds in a hosted agent:</strong> hosted Browserbase agents cannot cleanly do op CLI injection, which is exactly why the runner is self-hosted Stagehand.</p>
+      <p><strong>vs pre-warmed Contexts only:</strong> Contexts (one per platform + client) skip login but sites force logouts; JIT creds stay the reliable fallback.</p>
+    </div>
+    <div class="card">
+      <h3 class="ch">Local dev and next steps</h3>
+      <p>No token set? secrets.ts falls back to <code>PORTAL_&lt;KEY&gt;_USERNAME / _PASSWORD / _OTP</code> env vars so the full path is testable before 1Password is wired.</p>
+      <p>Planned hardening: swap the <code>op</code> CLI for the 1Password SDK in the long-running service, sanitize subprocess errors so tokens never reach logs, and pass item IDs instead of names in hot paths to stay under service account rate limits.</p>
+    </div>
+  </div>
+</div>
+
+<!-- API -->
+<div class="tab" id="tab-api">
+  <h2 class="section-title">The API callers see</h2>
+  <p class="sub">Async plus poll. Callers send business data plus a client, get a jobId, poll until done. Bearer auth via <code>GATEWAY_TOKEN</code>; scopes are useCase x client.</p>
+
+  <div class="cards">
+    <div class="card">
+      <h3 class="ch">Endpoints</h3>
+      <table>
+        <tr><th>Method</th><th>Path</th><th>Purpose</th></tr>
+        <tr><td>GET</td><td><code>/health</code></td><td>Liveness: <code>{ ok: true }</code></td></tr>
+        <tr><td>GET</td><td><code>/catalogue</code></td><td>Discover platforms, actions, variants, clients</td></tr>
+        <tr><td>POST</td><td><code>/jobs</code></td><td><code>{useCase, client, input}</code> returns <code>202 {jobId, state}</code></td></tr>
+        <tr><td>GET</td><td><code>/jobs/:id</code></td><td><code>{state, envelope?}</code>, poll until DONE</td></tr>
+      </table>
+      <h3 class="ch">Status semantics</h3>
+      <table>
+        <tr><th>Status</th><th>Meaning</th></tr>
+        <tr><td><span class="pill ok">success</span></td><td>Goal met, data extracted and verified</td></tr>
+        <tr><td><span class="pill warn">failure</span></td><td>Ran cleanly, negative outcome (no match, blank field)</td></tr>
+        <tr><td><span class="pill bad">error</span></td><td>System, auth, or navigation problem</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h3 class="ch">The envelope (stable across all use cases)</h3>
+<pre><code>{
+  "jobId": "...",
+  "useCase": "lightreach.milestoneStatus",
+  "client": "lgcyco",
+  "status": "success | failure | error",
+  "data": {
+    "milestone": "NTP",
+    "value": "2026-06-30",
+    "matchVerified": true
+  },
+  "error": {
+    "code": "MATCH_FAILED",
+    "message": "...",
+    "fields": ["address"]
+  },
+  "meta": {
+    "sessionId": "...",
+    "sessionReplayUrl": "...",
+    "credentialItem":
+      "op://Portals/lightreach.lgcyco",
+    "ranAt": "...",
+    "durationMs": 0,
+    "attempts": 1
+  }
+}</code></pre>
+      <p>Every response carries the Browserbase session id, replay URL, and which credential item ran, so any failure can be traced to a brand and watched back.</p>
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>Known gaps (by design, for now):</strong> the job store is in-memory (swap for Redis/Postgres before multiple replicas), there is no queue in front of Browserbase concurrency caps, and callers poll because webhooks do not exist yet.
+  </div>
+</div>
+
+<script>
+// ---------- node data ----------
+const NODES = {
+  caller: {
+    name: "Caller apps", tag: "edge", tagLabel: "Callers",
+    summary: "Intake and other internal apps. They know use cases, clients, and business data, nothing else.",
+    sections: [
+      { h: "Sends", items: ["POST /jobs with {useCase, client, input}", "Bearer token scoped per useCase x client", "Polls GET /jobs/:id until DONE"] },
+      { h: "Never sees", items: ["Credentials or 1Password anything", "Browserbase keys or session control", "Agent prompts, selectors, or override details"] },
+      { h: "Gets back", items: ["One envelope shape for every use case", "Session replay URL plus which credential item ran"] }
+    ]
+  },
+  server: {
+    name: "server.ts", tag: "internal", tagLabel: "Gateway module",
+    summary: "The HTTP front door. Async job lifecycle: accept, run in background, serve results.",
+    sections: [
+      { h: "Responsibilities", items: ["GET /health, GET /catalogue, POST /jobs, GET /jobs/:id", "202 + jobId immediately, work runs in background", "Bearer auth with useCase x client scopes", "Wraps every outcome in the envelope"] },
+      { h: "Watch out", items: ["Job store is in-memory: restarts lose jobs, replicas will not share state", "Planned: Redis or Postgres store, queue for Browserbase concurrency", "Dev-philosophy note: migrate to Express/Fastify + pino per house standards"] }
+    ]
+  },
+  catalogue: {
+    name: "catalogue.ts", tag: "internal", tagLabel: "Gateway module",
+    summary: "The registry: platforms, their actions, and their client rosters. All portal knowledge lives here; the core stays generic.",
+    sections: [
+      { h: "Structure", items: ["Platform: site, vault, base URL, client roster", "Action: inputSchema (with variant enums), buildGoal, locked extractSchema", "Client: login identity, optional navigation overrides (labels, url, hints)"] },
+      { h: "Resolution", items: ["getEntry(useCase) then merge client override at job time", "extractSchema never merges: one shape per action", "Layout too different for overrides = new action, client pinned"] }
+    ]
+  },
+  secrets: {
+    name: "secrets.ts", tag: "internal", tagLabel: "Gateway module",
+    summary: "Just-in-time credential resolution, keyed by platform + client. The only code that talks to 1Password.",
+    sections: [
+      { h: "Per run", items: ["resolvePortalCredentials(platform, client)", "60s cache keyed platform + client (rate limits)", "op read op://<vault>/<platform>.<client>/username, /password, TOTP", "Falls back to PORTAL_<KEY>_* env vars in local dev"] },
+      { h: "Guarantees", items: ["Creds never written to disk or logs", "Values redacted, dropped from memory after the run", "Rotation in the vault, zero code changes", "Runs sharing a login are serialized"] }
+    ]
+  },
+  runner: {
+    name: "runner.ts", tag: "internal", tagLabel: "Gateway module",
+    summary: "Orchestrates one job: validate, merge overrides, resolve creds, run the agent, normalize the result.",
+    sections: [
+      { h: "Steps", items: ["Validates input against the action's inputSchema (incl. variant enum)", "Merges base action + client override into the effective config", "Calls runAgent (Stagehand v3 loop: plan, observe, act)", "Maps raw outcome to success / failure / error envelope"] },
+      { h: "Risk posture", items: ["Auto-approves the headless login submit, blocks destructive actions after login", "Requires match verification before extraction", "Per-action and per-client tightening allowed, loosening not"] }
+    ]
+  },
+  onepassword: {
+    name: "1Password", tag: "external", tagLabel: "External service",
+    summary: "Vault-scoped secret storage. One vault per domain, one login item per platform + client, one service account per vault.",
+    sections: [
+      { h: "Setup", items: ["Items named platform.client (lightreach.lgcyco, lightreach.brandx, ...)", "Fields: username, password, one-time password (2FA)", "Service account token per vault is the container's only long-lived secret"] },
+      { h: "Whitelabel scale", items: ["5 to 7 client logins per platform is the expected shape", "A leaked token exposes one domain, not everything", "Never the browser extension in cloud sessions"] }
+    ]
+  },
+  browserbase: {
+    name: "Browserbase", tag: "external", tagLabel: "External service",
+    summary: "Remote cloud browsers. The gateway container ships no Chromium; every session runs here.",
+    sections: [
+      { h: "Provides", items: ["Ephemeral browser sessions driven by Stagehand", "Session id + replay URL returned in every envelope", "Contexts per platform + client for pre-warmed logins (planned fast path)"] },
+      { h: "Constraints", items: ["Concurrent session caps by plan: needs a queue before scale", "Sites can force logout of Contexts, so JIT creds stay the fallback"] }
+    ]
+  },
+  portal: {
+    name: "External platform", tag: "external", tagLabel: "The target site",
+    summary: "The website being automated, possibly wearing 5 to 7 whitelabel skins. First: LightReach / Palmetto. Next: any of 10+ platforms across domains.",
+    sections: [
+      { h: "First actions", items: ["milestoneStatus with milestone enum (NTP, PTO, Install, Permit)", "Verify match: name AND address must both correspond", "Strictly read-only, never mutate anything"] },
+      { h: "Explicit failures", items: ["AUTH_REQUIRED, LOGIN_FAILED, SEARCH_FAILED", "RECORD_NOT_FOUND, MATCH_FAILED, FIELD_NOT_FOUND", "NAVIGATION_ERROR, TIMEOUT"] },
+      { h: "Whitelabel reality", items: ["Brands can differ in labels, layout, even URL", "Canaries run per platform + client pair", "Assume nothing: first live run per brand against a known record"] }
+    ]
+  }
+};
+
+// ---------- lifecycle steps ----------
+const STEPS = [
+  { t: "Submit the job", d: "An app POSTs {useCase, client, input}, business data only. The server checks the caller's scope for that useCase x client pair and replies 202 with a jobId immediately.", nodes: ["caller","server"], edges: ["e_post"] },
+  { t: "Resolve the action", d: "getEntry(useCase) finds the platform and action. An unknown key fails fast with an error envelope; nothing else runs.", nodes: ["server","catalogue"], edges: ["e_sc"] },
+  { t: "Validate the input", d: "The action's zod inputSchema checks the caller's data, including variant enums like milestone: NTP | PTO | Install | Permit. Bad input never reaches a browser.", nodes: ["catalogue"], edges: [] },
+  { t: "Merge the client override", d: "If this client carries an override for the action (label map, custom URL, goal hints), it merges over the base definition. The extract schema never merges; the output contract is fixed.", nodes: ["catalogue","runner"], edges: ["e_cs"] },
+  { t: "Resolve credentials", d: "secrets.ts checks its cache, then op reads username, password, and TOTP from op://<vault>/<platform>.<client>. Jobs sharing this login are serialized so they cannot log each other out.", nodes: ["secrets","onepassword"], edges: ["e_s1p"] },
+  { t: "Build the goal", d: "buildGoal(input) merges the business data and variant into the instruction text, then override hints and label mappings are appended for this brand's layout.", nodes: ["catalogue","runner"], edges: ["e_sr"] },
+  { t: "Launch the browser", d: "runner.ts calls runAgent, which opens a Stagehand session on a Browserbase remote browser. Session id and replay URL are captured for the envelope.", nodes: ["runner","browserbase"], edges: ["e_rb"] },
+  { t: "Log in as the client", d: "Credentials are injected as Stagehand variables and typed into the brand's login form. They are never part of any LLM prompt and are redacted in logs.", nodes: ["browserbase","portal"], edges: ["e_bp"] },
+  { t: "Do the work", d: "The agent executes the read-only goal: search the record, verify name AND address, read the requested field using this brand's labels. Extraction follows the locked extractSchema.", nodes: ["portal"], edges: [] },
+  { t: "Normalize and collect", d: "runner.ts maps the outcome onto the envelope (success, failure, or error) with client and credential item in meta. The caller polls GET /jobs/:id until DONE.", nodes: ["runner","server","caller"], edges: ["e_ret"] }
+];
+
+// ---------- SVG map ----------
+function nodeSvg(id, x, y, w, h, title, sub, cls) {
+  return `<g class="node ${cls}" data-node="${id}" transform="translate(${x},${y})">
+    <rect width="${w}" height="${h}" rx="8"/>
+    <text class="nt" x="14" y="${h/2 - 8}" dominant-baseline="central">${title}</text>
+    <text class="ns" x="14" y="${h/2 + 12}" dominant-baseline="central">${sub}</text>
+  </g>`;
+}
+function buildMap() {
+  return `<svg viewBox="0 0 860 440" role="img" aria-label="Gateway architecture map">
+    <defs><marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker></defs>
+    <rect class="container-box" x="250" y="16" width="280" height="408" rx="14"/>
+    <text class="container-label" x="270" y="38">GATEWAY CONTAINER</text>
+    <path id="e_post" class="edge" d="M190 92 L266 92" marker-end="url(#ah)"/>
+    <text class="elabel" x="182" y="108">POST {useCase, client, input}</text>
+    <path id="e_ret" class="edge" d="M266 60 L190 60" stroke-dasharray="4 3" marker-end="url(#ah)"/>
+    <text class="elabel" x="198" y="50">envelope</text>
+    <path id="e_sc" class="edge" d="M390 124 L390 148" marker-end="url(#ah)"/>
+    <path id="e_cs" class="edge" d="M390 212 L390 236" marker-end="url(#ah)"/>
+    <path id="e_sr" class="edge" d="M390 300 L390 324" marker-end="url(#ah)"/>
+    <path id="e_s1p" class="edge" d="M510 268 L560 268 L560 152 L596 152" marker-end="url(#ah)"/>
+    <text class="elabel" x="566" y="200">op read</text>
+    <path id="e_rb" class="edge" d="M510 356 L560 356 L560 260 L596 260" marker-end="url(#ah)"/>
+    <path id="e_bp" class="edge" d="M706 292 L706 332" marker-end="url(#ah)"/>
+    ${nodeSvg("caller", 20, 40, 170, 64, "Caller apps", "intake + internal tools", "")}
+    ${nodeSvg("server", 270, 60, 240, 64, "server.ts", "async jobs + scopes", "internal")}
+    ${nodeSvg("catalogue", 270, 148, 240, 64, "catalogue.ts", "platform / action / client", "internal")}
+    ${nodeSvg("secrets", 270, 236, 240, 64, "secrets.ts", "creds per platform.client", "internal")}
+    ${nodeSvg("runner", 270, 324, 240, 64, "runner.ts", "override merge + agent run", "internal")}
+    ${nodeSvg("onepassword", 600, 120, 220, 64, "1Password", "vault per domain", "external")}
+    ${nodeSvg("browserbase", 600, 228, 220, 64, "Browserbase", "remote browsers", "external")}
+    ${nodeSvg("portal", 600, 332, 220, 64, "External platform", "5-7 whitelabel logins", "external")}
+  </svg>`;
+}
+
+document.getElementById("map-arch").innerHTML = buildMap();
+document.getElementById("map-life").innerHTML = buildMap();
+
+// ---------- detail panel ----------
+function renderDetail(id) {
+  const n = NODES[id];
+  let html = `<h2>${n.name}</h2><span class="tag ${n.tag}">${n.tagLabel}</span><p class="summary">${n.summary}</p>`;
+  n.sections.forEach(s => {
+    html += `<h3>${s.h}</h3><ul>` + s.items.map(i => `<li>${i}</li>`).join("") + `</ul>`;
+  });
+  document.getElementById("detail-panel").innerHTML = html;
+  document.querySelectorAll("#map-arch .node").forEach(el => {
+    el.classList.toggle("selected", el.dataset.node === id);
+  });
+}
+document.querySelectorAll("#map-arch .node").forEach(el => {
+  el.addEventListener("click", () => renderDetail(el.dataset.node));
+});
+renderDetail("catalogue");
+
+// ---------- lifecycle stepper ----------
+let step = 0;
+const dotsEl = document.getElementById("dots");
+STEPS.forEach((s, i) => {
+  const d = document.createElement("div");
+  d.className = "dot";
+  d.addEventListener("click", () => { step = i; renderStep(); });
+  dotsEl.appendChild(d);
+});
+function renderStep() {
+  const s = STEPS[step];
+  document.getElementById("step-count").textContent = `Step ${step + 1} of ${STEPS.length}`;
+  document.getElementById("step-title").textContent = s.t;
+  document.getElementById("step-desc").textContent = s.d;
+  document.getElementById("prev-btn").disabled = step === 0;
+  document.getElementById("next-btn").disabled = step === STEPS.length - 1;
+  document.querySelectorAll("#dots .dot").forEach((d, i) => d.classList.toggle("on", i <= step));
+  const map = document.getElementById("map-life");
+  map.querySelectorAll(".node").forEach(el => {
+    const on = s.nodes.includes(el.dataset.node);
+    el.classList.toggle("lit", on);
+    el.classList.toggle("dim", !on);
+  });
+  map.querySelectorAll(".edge").forEach(el => {
+    const on = s.edges.includes(el.id);
+    el.classList.toggle("lit", on);
+    el.classList.toggle("dim", !on);
+  });
+}
+document.getElementById("prev-btn").addEventListener("click", () => { if (step > 0) { step--; renderStep(); } });
+document.getElementById("next-btn").addEventListener("click", () => { if (step < STEPS.length - 1) { step++; renderStep(); } });
+renderStep();
+
+// ---------- tabs ----------
+document.querySelectorAll("#nav button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("#nav button").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    document.getElementById("tab-" + btn.dataset.tab).classList.add("active");
+  });
+});
+</script>
+</body>
+</html>

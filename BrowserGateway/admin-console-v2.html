@@ -1,0 +1,1842 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gateway Admin</title>
+<style>
+:root {
+  --bg: #fbfbfa; --surface: #fff; --surface-2: #f6f6f4;
+  --border: #e7e6e2; --border-strong: #d8d6d0;
+  --text: #17171a; --text-2: #5c5c66; --text-3: #8a8a94;
+  --accent: #4f46e5; --accent-hover: #4338ca; --accent-soft: #eef2ff;
+  --success: #12805c; --success-soft: #e7f7f0;
+  --warning: #9a6700; --warning-soft: #fdf5e6;
+  --danger: #c0362c; --danger-soft: #fdecea;
+  --info: #2563eb; --info-soft: #e8f0fe;
+  --r-sm: 6px; --r-md: 10px; --r-lg: 14px; --r-full: 999px;
+  --sh-sm: 0 1px 2px rgba(23,23,26,.05), 0 1px 1px rgba(23,23,26,.04);
+  --sh-md: 0 4px 12px rgba(23,23,26,.07), 0 2px 4px rgba(23,23,26,.04);
+  --sh-drawer: -16px 0 48px rgba(23,23,26,.16);
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 13.5px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+a { color: inherit; text-decoration: none; }
+button { font-family: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+/* ---------- icons ---------- */
+.ic { width: 16px; height: 16px; stroke: currentColor; stroke-width: 1.8; fill: none; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+.ic-fill { fill: currentColor; stroke: none; }
+.ic-lg { width: 20px; height: 20px; }
+.ic-xl { width: 26px; height: 26px; }
+
+/* ---------- layout ---------- */
+.sidebar { position: fixed; top: 0; left: 0; width: 240px; height: 100vh; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; z-index: 30; }
+.brand { display: flex; align-items: center; gap: 10px; padding: 16px 18px 14px; }
+.brand-mark { width: 30px; height: 30px; border-radius: 8px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; box-shadow: var(--sh-sm); }
+.brand-txt strong { display: block; font-size: 14px; font-weight: 650; letter-spacing: -.01em; }
+.brand-txt span { display: block; font-size: 11px; color: var(--text-3); }
+.nav { flex: 1; overflow-y: auto; padding: 4px 10px 16px; }
+.nav-group { font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); padding: 16px 10px 6px; }
+.nav-item { position: relative; display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: var(--r-md); color: var(--text-2); font-weight: 500; cursor: pointer; margin-bottom: 1px; }
+.nav-item:hover { background: var(--surface-2); color: var(--text); }
+.nav-item.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.nav-item.active::before { content: ""; position: absolute; left: -10px; top: 6px; bottom: 6px; width: 3px; border-radius: 0 3px 3px 0; background: var(--accent); }
+.nav-item .ic { color: currentColor; }
+.nav-item .lbl { flex: 1; }
+.nav-badge { font-size: 10.5px; font-weight: 600; background: var(--surface-2); color: var(--text-2); border: 1px solid var(--border); border-radius: var(--r-full); padding: 1px 7px; }
+.nav-item.active .nav-badge { background: #fff; border-color: transparent; }
+.nav-badge.danger { background: var(--danger-soft); color: var(--danger); border-color: transparent; }
+.nav-badge.warning { background: var(--warning-soft); color: var(--warning); border-color: transparent; }
+.nav-badge.accent { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+.side-foot { border-top: 1px solid var(--border); padding: 10px 16px; font-size: 11.5px; color: var(--text-3); display: flex; align-items: center; gap: 8px; }
+
+.topbar { position: fixed; top: 0; left: 240px; right: 0; height: 56px; background: rgba(255,255,255,.85); backdrop-filter: saturate(1.2) blur(8px); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 14px; padding: 0 24px; z-index: 20; }
+.cmdk { flex: 1; max-width: 460px; display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-md); color: var(--text-3); font-size: 13px; cursor: text; }
+.cmdk:hover { border-color: var(--border-strong); }
+.cmdk .flex1 { flex: 1; text-align: left; }
+.kbd { font-family: var(--sans); font-size: 11px; font-weight: 600; color: var(--text-3); background: var(--surface); border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; box-shadow: var(--sh-sm); }
+.top-right { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+.env-ctl { display: flex; align-items: center; gap: 7px; height: 32px; padding: 0 11px; border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface); font-size: 12px; }
+.env-ctl .lbl { color: var(--text-3); }
+.env-ctl .val { font-weight: 650; letter-spacing: .03em; }
+.env-ctl .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); }
+.icon-btn { position: relative; width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border); background: var(--surface); border-radius: var(--r-md); color: var(--text-2); cursor: pointer; }
+.icon-btn:hover { background: var(--surface-2); color: var(--text); }
+.icon-btn .count { position: absolute; top: -5px; right: -5px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: var(--r-full); background: var(--accent); color: #fff; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.avatar { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg,#6366f1,#4338ca); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; }
+
+.content { margin-left: 240px; padding-top: 56px; min-height: 100vh; }
+.view-wrap { max-width: 1280px; margin: 0 auto; padding: 26px 32px 96px; }
+
+/* ---------- typography ---------- */
+.display { font-size: 24px; font-weight: 700; letter-spacing: -.02em; }
+h1 { font-size: 19px; font-weight: 650; letter-spacing: -.015em; }
+h2 { font-size: 15px; font-weight: 650; letter-spacing: -.01em; }
+.eyebrow { font-size: 13px; font-weight: 650; text-transform: uppercase; letter-spacing: .06em; color: var(--text-3); }
+.sub { color: var(--text-2); font-size: 13px; }
+.sm { font-size: 12.5px; }
+.xs { font-size: 11.5px; }
+.mono { font-family: var(--mono); font-size: 12.5px; }
+.muted { color: var(--text-3); }
+.txt2 { color: var(--text-2); }
+
+.page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.crumbs { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-3); margin-bottom: 8px; }
+.crumbs a { color: var(--text-2); cursor: pointer; }
+.crumbs a:hover { color: var(--accent); }
+.crumbs .ic { width: 13px; height: 13px; }
+.section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 28px 0 12px; }
+.section-head:first-child { margin-top: 0; }
+
+/* ---------- buttons ---------- */
+.btn { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 550; border-radius: var(--r-md); padding: 8px 14px; cursor: pointer; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); box-shadow: var(--sh-sm); white-space: nowrap; }
+.btn:hover { background: var(--surface-2); }
+.btn .ic { width: 15px; height: 15px; }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn-primary:hover { background: var(--accent-hover); }
+.btn-danger { background: var(--surface); border-color: var(--border-strong); color: var(--danger); }
+.btn-danger:hover { background: var(--danger-soft); border-color: var(--danger-soft); }
+.btn-ghost { border-color: transparent; background: transparent; box-shadow: none; color: var(--text-2); }
+.btn-ghost:hover { background: var(--surface-2); color: var(--text); }
+.btn-sm { padding: 5px 10px; font-size: 12px; border-radius: var(--r-sm); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ---------- inputs ---------- */
+input[type=text], input[type=number], input[type=password], select, textarea {
+  font-family: inherit; font-size: 13px; color: var(--text); background: var(--surface);
+  border: 1px solid var(--border-strong); border-radius: var(--r-md); padding: 7px 11px; width: 100%;
+}
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+textarea { font-family: var(--mono); font-size: 12.5px; line-height: 1.6; min-height: 76px; resize: vertical; }
+textarea.locked { background: var(--surface-2); color: var(--text-2); }
+label.f { display: block; font-size: 12px; font-weight: 600; color: var(--text-2); margin: 14px 0 5px; }
+.field-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.field-row > * { flex: 1; min-width: 130px; }
+.input-icon { position: relative; }
+.input-icon .ic { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--text-3); }
+.input-icon input { padding-left: 34px; }
+
+/* ---------- toggle (role=switch) ---------- */
+.tgl { position: relative; width: 36px; height: 20px; border-radius: var(--r-full); background: var(--border-strong); border: none; cursor: pointer; padding: 0; flex-shrink: 0; transition: background .15s; }
+.tgl::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: var(--sh-sm); transition: left .15s; }
+.tgl[aria-checked="true"] { background: var(--accent); }
+.tgl[aria-checked="true"]::after { left: 18px; }
+.tgl:disabled { opacity: .5; cursor: not-allowed; }
+.tgl-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 11px 0; border-bottom: 1px solid var(--border); }
+.tgl-row:last-child { border-bottom: none; }
+.tgl-row .t1 { font-weight: 600; font-size: 13px; }
+.tgl-row .t2 { font-size: 12px; color: var(--text-3); margin-top: 1px; }
+
+/* ---------- table ---------- */
+.tbl-wrap { border: 1px solid var(--border); border-radius: var(--r-lg); overflow: hidden; background: var(--surface); box-shadow: var(--sh-sm); }
+.tbl-scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--text-3); background: var(--surface-2); padding: 9px 14px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+th.sortable { cursor: pointer; }
+th.sortable .ic { width: 12px; height: 12px; opacity: .5; vertical-align: middle; margin-left: 3px; }
+td { padding: 11px 14px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: middle; }
+tbody tr:last-child td, tr:last-child td { border-bottom: none; }
+.tbl-row.click { cursor: pointer; }
+.tbl-row.click:hover td { background: var(--surface-2); }
+.right { text-align: right; }
+.nowrap { white-space: nowrap; }
+.tbl-check { width: 34px; }
+
+/* ---------- pills (OUTCOME) & chips (LIFECYCLE / context / tags) ---------- */
+.pill { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 600; border-radius: var(--r-full); padding: 2px 10px; white-space: nowrap; }
+.pill .dot { width: 6px; height: 6px; border-radius: 50%; }
+.pill-success { background: var(--success-soft); color: var(--success); } .pill-success .dot { background: var(--success); }
+.pill-failure { background: var(--warning-soft); color: var(--warning); } .pill-failure .dot { background: var(--warning); }
+.pill-error { background: var(--danger-soft); color: var(--danger); } .pill-error .dot { background: var(--danger); }
+.pill-healthy { background: var(--success-soft); color: var(--success); } .pill-healthy .dot { background: var(--success); }
+.pill-bad { background: var(--danger-soft); color: var(--danger); } .pill-bad .dot { background: var(--danger); }
+
+.chip { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 600; border-radius: var(--r-full); padding: 2px 9px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text-2); white-space: nowrap; }
+.chip .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); }
+.chip-running { color: var(--text); border-color: var(--border-strong); }
+.chip-running .dot { background: var(--accent); animation: pulse 1.15s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.65); } }
+.ctx-warm { color: var(--info); border-color: color-mix(in srgb, var(--info) 30%, var(--border)); } .ctx-warm .dot { background: var(--info); }
+.ctx-cold .dot { background: var(--text-3); }
+.ctx-expired { color: var(--warning); border-color: color-mix(in srgb, var(--warning) 34%, var(--border)); } .ctx-expired .dot { background: var(--warning); }
+.tag { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; border-radius: var(--r-sm); padding: 2px 8px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2); white-space: nowrap; }
+.tag-accent { background: var(--accent-soft); border-color: transparent; color: var(--accent); }
+.tag-warning { background: var(--warning-soft); border-color: transparent; color: var(--warning); }
+.tag-info { background: var(--info-soft); border-color: transparent; color: var(--info); }
+.tag-mono { font-family: var(--mono); font-weight: 500; }
+.tag-none { color: var(--text-3); background: transparent; border-style: dashed; }
+
+/* ---------- cards ---------- */
+.grid { display: grid; gap: 14px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 18px; box-shadow: var(--sh-sm); }
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+.card-head h2, .card-head h3 { font-size: 13px; font-weight: 650; text-transform: uppercase; letter-spacing: .05em; color: var(--text-3); }
+.stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 15px 16px; box-shadow: var(--sh-sm); }
+.stat .k { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--text-2); font-weight: 550; }
+.stat .k .ic { width: 14px; height: 14px; color: var(--text-3); }
+.stat .v { font-size: 25px; font-weight: 700; letter-spacing: -.02em; margin-top: 8px; }
+.stat .d { font-size: 11.5px; color: var(--text-3); margin-top: 3px; }
+.v-ok { color: var(--success); } .v-bad { color: var(--danger); } .v-warn { color: var(--warning); }
+
+/* ---------- attention feed ---------- */
+.feed { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; margin-bottom: 24px; }
+.att { display: flex; gap: 12px; align-items: flex-start; text-align: left; width: 100%; background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--border-strong); border-radius: var(--r-md); padding: 13px 15px; cursor: pointer; box-shadow: var(--sh-sm); }
+.att:hover { border-color: var(--border-strong); box-shadow: var(--sh-md); }
+.att.sev-danger { border-left-color: var(--danger); }
+.att.sev-warning { border-left-color: var(--warning); }
+.att.sev-info { border-left-color: var(--info); }
+.att-ic { width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.att.sev-danger .att-ic { background: var(--danger-soft); color: var(--danger); }
+.att.sev-warning .att-ic { background: var(--warning-soft); color: var(--warning); }
+.att.sev-info .att-ic { background: var(--info-soft); color: var(--info); }
+.att-body { flex: 1; min-width: 0; }
+.att-body .t1 { font-weight: 600; font-size: 13px; }
+.att-body .t2 { font-size: 12px; color: var(--text-2); margin-top: 2px; }
+.att-body .t3 { font-size: 11.5px; color: var(--accent); font-weight: 600; margin-top: 7px; display: inline-flex; align-items: center; gap: 4px; }
+
+/* ---------- range chips ---------- */
+.seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: var(--r-md); overflow: hidden; background: var(--surface); }
+.seg button { border: none; background: transparent; padding: 5px 12px; font-size: 12px; font-weight: 550; color: var(--text-2); cursor: pointer; border-right: 1px solid var(--border); }
+.seg button:last-child { border-right: none; }
+.seg button.on { background: var(--accent-soft); color: var(--accent); font-weight: 650; }
+
+/* ---------- bar chart ---------- */
+.bars { display: flex; align-items: flex-end; gap: 10px; height: 150px; padding-top: 8px; }
+.bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; height: 100%; justify-content: flex-end; }
+.bar-stack { width: 100%; max-width: 42px; display: flex; flex-direction: column-reverse; gap: 2px; }
+.bar-stack > div { border-radius: 2px; }
+.bar-lbl { font-size: 10.5px; color: var(--text-3); }
+.seg-ok { background: color-mix(in srgb, var(--success) 55%, #fff); }
+.seg-fail { background: color-mix(in srgb, var(--warning) 62%, #fff); }
+.seg-err { background: color-mix(in srgb, var(--danger) 62%, #fff); }
+.legend { display: flex; gap: 16px; margin-top: 12px; font-size: 11.5px; color: var(--text-2); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 10px; height: 10px; border-radius: 3px; }
+
+/* ---------- running strip ---------- */
+.run-strip { display: flex; flex-direction: column; gap: 10px; }
+.run-item { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center; padding: 11px 14px; border: 1px solid var(--border); border-radius: var(--r-md); cursor: pointer; }
+.run-item:hover { background: var(--surface-2); }
+.run-item .prog { grid-column: 1 / -1; height: 5px; background: var(--surface-2); border-radius: var(--r-full); overflow: hidden; }
+.run-item .prog > div { height: 100%; background: var(--accent); border-radius: var(--r-full); transition: width .4s; }
+
+/* ---------- meter ---------- */
+.meter { height: 7px; background: var(--surface-2); border-radius: var(--r-full); overflow: hidden; margin-top: 6px; }
+.meter > div { height: 100%; border-radius: var(--r-full); background: var(--accent); }
+.meter.warn > div { background: var(--warning); }
+.meter.ok > div { background: var(--success); }
+
+/* ---------- kv ---------- */
+.kv { display: grid; grid-template-columns: 150px 1fr; gap: 9px 14px; font-size: 13px; }
+.kv .k { color: var(--text-3); }
+.kv .v { min-width: 0; }
+.kv .v a { color: var(--accent); cursor: pointer; }
+.kv .v a:hover { text-decoration: underline; }
+
+/* ---------- note / callout ---------- */
+.note { display: flex; gap: 10px; border: 1px solid var(--border); background: var(--surface-2); border-radius: var(--r-md); padding: 11px 14px; font-size: 12.5px; color: var(--text-2); margin: 14px 0; }
+.note .ic { color: var(--text-3); margin-top: 1px; }
+.note.accent { border-left: 3px solid var(--accent); }
+.note.warning { border-left: 3px solid var(--warning); }
+
+/* ---------- toolbar ---------- */
+.toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+.toolbar .grow { flex: 1; min-width: 200px; }
+.toolbar select, .toolbar input { width: auto; }
+.toolbar select { min-width: 130px; }
+
+/* ---------- drawer ---------- */
+.drawer { position: fixed; top: 0; right: 0; width: 640px; max-width: 96vw; height: 100vh; background: var(--surface); border-left: 1px solid var(--border); box-shadow: var(--sh-drawer); transform: translateX(100%); transition: transform .24s cubic-bezier(.4,0,.2,1); z-index: 60; display: flex; flex-direction: column; }
+.drawer.open { transform: translateX(0); }
+.drawer-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 22px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface); }
+.drawer-body { flex: 1; overflow-y: auto; padding: 20px 22px; }
+.drawer-foot { border-top: 1px solid var(--border); padding: 14px 22px; display: flex; gap: 10px; align-items: center; background: var(--surface); }
+.drawer-title { display: flex; align-items: center; gap: 10px; }
+.drawer-title h2 { font-size: 16px; }
+
+/* ---------- scrim / modal ---------- */
+.scrim { position: fixed; inset: 0; background: rgba(23,23,26,.4); backdrop-filter: blur(2px); display: none; align-items: center; justify-content: center; z-index: 80; padding: 24px; }
+.scrim.open { display: flex; }
+.modal { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--sh-md); width: 520px; max-width: 100%; max-height: 88vh; overflow-y: auto; }
+.modal-head { padding: 18px 20px 0; }
+.modal-head h2 { font-size: 16px; }
+.modal-body { padding: 12px 20px; }
+.modal-foot { padding: 8px 20px 18px; display: flex; gap: 8px; justify-content: flex-end; }
+.modal-wide { width: 640px; }
+
+/* ---------- toast ---------- */
+.toast-wrap { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 99; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; }
+.toast { display: flex; align-items: center; gap: 9px; background: var(--text); color: #fff; padding: 9px 16px; border-radius: var(--r-full); font-size: 12.5px; font-weight: 550; box-shadow: var(--sh-md); opacity: 0; transform: translateY(8px); transition: opacity .2s, transform .2s; }
+.toast.show { opacity: 1; transform: translateY(0); }
+.toast .ic { color: color-mix(in srgb, #fff 70%, var(--accent)); }
+
+/* ---------- steps timeline ---------- */
+.timeline { display: flex; flex-direction: column; gap: 0; }
+.tl-step { display: flex; gap: 12px; align-items: flex-start; }
+.tl-mark { display: flex; flex-direction: column; align-items: center; }
+.tl-dot { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--border-strong); background: var(--surface); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.tl-line { width: 2px; flex: 1; min-height: 16px; background: var(--border); }
+.tl-step.done .tl-dot { border-color: var(--accent); background: var(--accent); color: #fff; }
+.tl-step.done .tl-line { background: var(--accent); }
+.tl-step.active .tl-dot { border-color: var(--accent); }
+.tl-step.active .tl-dot .pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: pulse 1.15s ease-in-out infinite; }
+.tl-body { padding-bottom: 16px; }
+.tl-step:last-child .tl-body { padding-bottom: 0; }
+.tl-body .t1 { font-weight: 600; font-size: 13px; }
+.tl-step.dim .tl-body .t1 { color: var(--text-3); font-weight: 500; }
+.tl-body .t2 { font-size: 11.5px; color: var(--text-3); }
+
+/* ---------- replay ---------- */
+.replay { position: relative; border-radius: var(--r-md); background: #1a1a22; height: 150px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: #d4d4dd; cursor: pointer; overflow: hidden; }
+.replay::before { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at 50% 40%, rgba(79,70,229,.28), transparent 60%); }
+.replay .play { width: 46px; height: 46px; border-radius: 50%; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.2); display: flex; align-items: center; justify-content: center; z-index: 1; }
+.replay .cap { font-size: 12px; z-index: 1; }
+
+/* ---------- code / envelope ---------- */
+pre { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-md); padding: 13px; font-family: var(--mono); font-size: 12px; line-height: 1.6; overflow-x: auto; white-space: pre; }
+.code-block { position: relative; }
+.tabset { display: inline-flex; gap: 2px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-md); padding: 2px; }
+.tabset button { border: none; background: transparent; padding: 5px 12px; font-size: 12.5px; font-weight: 550; color: var(--text-2); border-radius: var(--r-sm); cursor: pointer; }
+.tabset button.on { background: var(--surface); color: var(--text); box-shadow: var(--sh-sm); }
+
+/* ---------- diff ---------- */
+.diff { border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; font-family: var(--mono); font-size: 12px; }
+.diff-line { display: flex; gap: 10px; padding: 3px 12px; }
+.diff-line .gutter { width: 14px; color: var(--text-3); flex-shrink: 0; }
+.diff-line.add { background: var(--success-soft); }
+.diff-line.add .gutter { color: var(--success); }
+.diff-line.del { background: var(--danger-soft); color: var(--text-3); text-decoration: line-through; }
+.diff-line.del .gutter { color: var(--danger); }
+
+/* ---------- sparkline dots ---------- */
+.spark { display: inline-flex; gap: 3px; align-items: center; }
+.spark i { width: 7px; height: 7px; border-radius: 2px; }
+.spark i.ok { background: color-mix(in srgb, var(--success) 60%, #fff); }
+.spark i.fail { background: color-mix(in srgb, var(--warning) 65%, #fff); }
+.spark i.err { background: color-mix(in srgb, var(--danger) 65%, #fff); }
+
+/* ---------- empty ---------- */
+.empty { text-align: center; padding: 54px 20px; color: var(--text-3); }
+.empty .ic { width: 34px; height: 34px; color: var(--border-strong); margin-bottom: 12px; }
+.empty .t1 { font-weight: 600; color: var(--text-2); font-size: 14px; }
+.empty .t2 { font-size: 12.5px; margin-top: 4px; }
+
+/* ---------- bulk bar ---------- */
+.bulk-bar { display: none; align-items: center; gap: 12px; background: var(--text); color: #fff; padding: 9px 14px; border-radius: var(--r-md); margin-bottom: 12px; box-shadow: var(--sh-md); }
+.bulk-bar.show { display: flex; }
+.bulk-bar .btn { background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.2); color: #fff; box-shadow: none; }
+.bulk-bar .btn:hover { background: rgba(255,255,255,.24); }
+
+/* ---------- docs arch map ---------- */
+.arch { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; padding: 8px 0; }
+.arch-box { border: 1px solid var(--border-strong); border-radius: var(--r-md); padding: 12px 14px; background: var(--surface); text-align: center; min-width: 110px; box-shadow: var(--sh-sm); }
+.arch-box .t1 { font-weight: 650; font-size: 12.5px; }
+.arch-box .t2 { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+.arch-box.gw { border-color: var(--accent); background: var(--accent-soft); }
+.arch-stack { display: flex; flex-direction: column; gap: 8px; }
+.arch-arrow { color: var(--text-3); display: flex; align-items: center; }
+.arch-inner { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; margin-top: 8px; }
+.arch-inner .tag { background: #fff; }
+
+/* ---------- lifecycle stepper (docs) ---------- */
+.stepper { display: flex; flex-direction: column; gap: 2px; }
+.step-btn { display: flex; gap: 12px; align-items: center; width: 100%; text-align: left; border: 1px solid transparent; background: transparent; padding: 9px 12px; border-radius: var(--r-md); cursor: pointer; }
+.step-btn:hover { background: var(--surface-2); }
+.step-btn.on { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 25%, transparent); }
+.step-num { width: 24px; height: 24px; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--border-strong); color: var(--text-2); font-size: 12px; font-weight: 650; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.step-btn.on .step-num { background: var(--accent); border-color: var(--accent); color: #fff; }
+.step-btn .st1 { font-weight: 600; font-size: 13px; }
+.step-btn .st2 { font-size: 12px; color: var(--text-3); }
+
+.divider { height: 1px; background: var(--border); margin: 24px 0; }
+.hstack { display: flex; align-items: center; gap: 10px; }
+.vstack { display: flex; flex-direction: column; }
+.wrap-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.spacer { flex: 1; }
+</style>
+</head>
+<body>
+
+<!-- ===== SVG SPRITE ===== -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11l9-8 9 8"/><path d="M5 10v10a1 1 0 001 1h12a1 1 0 001-1V10"/></symbol>
+<symbol id="i-jobs" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></symbol>
+<symbol id="i-catalogue" viewBox="0 0 24 24"><path d="M12 3l8 4.5-8 4.5-8-4.5L12 3z"/><path d="M4 12l8 4.5 8-4.5"/><path d="M4 16.5l8 4.5 8-4.5"/></symbol>
+<symbol id="i-secrets" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 018 0v3"/><path d="M12 15v2"/></symbol>
+<symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="9" r="4"/><path d="M11 12l8 8M16.5 17.5l2-2"/></symbol>
+<symbol id="i-access" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20c0-3 2.5-5.5 5.5-5.5s5.5 2.5 5.5 5.5"/><path d="M16 5.2a3.2 3.2 0 010 5.6M17.5 20c0-2.4-1-4.4-2.6-5.4"/></symbol>
+<symbol id="i-canary" viewBox="0 0 24 24"><path d="M3 12h4l2.5 7 5-14 2.5 7H21"/></symbol>
+<symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 9a6 6 0 1112 0c0 4.5 1.8 6 1.8 6H4.2S6 13.5 6 9z"/><path d="M10 20a2 2 0 004 0"/></symbol>
+<symbol id="i-audit" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/></symbol>
+<symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h11M19 7h1"/><path d="M4 12h5M13 12h7"/><path d="M4 17h9M17 17h3"/><circle cx="17" cy="7" r="2"/><circle cx="11" cy="12" r="2"/><circle cx="15" cy="17" r="2"/></symbol>
+<symbol id="i-docs" viewBox="0 0 24 24"><path d="M12 6C10 4.6 7 4.2 4 5v14c3-.8 6-.4 8 1 2-1.4 5-1.8 8-1V5c-3-.8-6-.4-8 1z"/><path d="M12 6v14"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></symbol>
+<symbol id="i-chevron" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+<symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+<symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></symbol>
+<symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 11-2.3-5.6"/><path d="M20 4v5h-5"/></symbol>
+<symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 13v6a1 1 0 01-1 1H5a1 1 0 01-1-1V7a1 1 0 011-1h6"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></symbol>
+<symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3.5l9.5 16H2.5z"/><path d="M12 9v5M12 17v.5"/></symbol>
+<symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 018 0v3"/></symbol>
+<symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h15M13 6l6 6-6 6"/></symbol>
+<symbol id="i-filter" viewBox="0 0 24 24"><path d="M3 5h18l-7 8v6l-4-2v-4z"/></symbol>
+<symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.4 8-8 9-4.6-1-8-4-8-9V6z"/></symbol>
+<symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M14 6l4 4"/></symbol>
+<symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2M6 7l1 13a1 1 0 001 1h8a1 1 0 001-1l1-13"/></symbol>
+<symbol id="i-zap" viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+<symbol id="i-inbox" viewBox="0 0 24 24"><path d="M4 13l2-8h12l2 8v5a1 1 0 01-1 1H5a1 1 0 01-1-1z"/><path d="M4 13h4l1.5 2h5L15 13h5"/></symbol>
+<symbol id="i-activity" viewBox="0 0 24 24"><path d="M3 12h4l2.5 7 5-14 2.5 7H21"/></symbol>
+<symbol id="i-dollar" viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M16 7.5c0-1.7-1.8-3-4-3s-4 1.3-4 3 1.8 3 4 3 4 1.3 4 3-1.8 3-4 3-4-1.3-4-3"/></symbol>
+<symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4 18a8 8 0 1116 0"/><path d="M12 18l4-5"/></symbol>
+<symbol id="i-flag" viewBox="0 0 24 24"><path d="M5 21V4"/><path d="M5 5h11l-2 3 2 3H5"/></symbol>
+<symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8v.5"/></symbol>
+<symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 5v14M15 5v14"/></symbol>
+<symbol id="i-power" viewBox="0 0 24 24"><path d="M12 4v8"/><path d="M7 6a8 8 0 1010 0"/></symbol>
+<symbol id="i-server" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5v.01M7 16.5v.01"/></symbol>
+</defs></svg>
+
+<aside class="sidebar">
+  <div class="brand">
+    <div class="brand-mark"><svg class="ic ic-lg"><use href="#i-shield"/></svg></div>
+    <div class="brand-txt"><strong>Gateway Admin</strong><span>Browser Automation Gateway</span></div>
+  </div>
+  <nav class="nav" id="nav"></nav>
+  <div class="side-foot"><svg class="ic"><use href="#i-server"/></svg><span>gateway 0.5.0 · in-memory</span></div>
+</aside>
+
+<header class="topbar">
+  <button class="cmdk" id="cmdk-trigger" aria-label="Open command palette">
+    <svg class="ic"><use href="#i-search"/></svg>
+    <span class="flex1">Search or jump to</span>
+    <span class="kbd">Cmd K</span>
+  </button>
+  <div class="top-right">
+    <div class="env-ctl" title="Deployment environment"><span class="dot"></span><span class="lbl">Env</span><span class="val">PROD</span></div>
+    <button class="icon-btn" id="bell-btn" aria-label="Alert inbox"><svg class="ic"><use href="#i-bell"/></svg><span class="count" id="bell-count">3</span></button>
+    <div class="avatar" title="andy@gojobengine.com">AP</div>
+  </div>
+</header>
+
+<main class="content"><div class="view-wrap" id="view"></div></main>
+
+<div class="drawer" id="drawer" role="dialog" aria-modal="true"></div>
+<div class="scrim" id="scrim"><div class="modal" id="modal" role="dialog" aria-modal="true"></div></div>
+<div class="toast-wrap" id="toast-wrap"></div>
+
+<script>
+/* ============================================================
+   STATE
+   ============================================================ */
+const state = {
+  ui: { range: "7d", jobSort: "at", jobSel: new Set(), envelopeMode: "pretty", stepIdx: 0 },
+  platforms: [
+    {
+      key: "lightreach", name: "LightReach / Palmetto", vault: "Portals", url: "https://palmetto.finance/accounts",
+      actions: [
+        { key: "milestoneStatus", risk: "read-only", enabled: true, status: "live", variants: ["NTP","PTO","Install","Permit"], timeout: 180, attempts: 2,
+          input: "name: string\naddress: string\nprojectId?: string\nmilestone: enum(NTP | PTO | Install | Permit)",
+          extract: "milestone: string\nvalue: string\nmatchVerified: boolean\nmatchedName: string\nmatchedAddress: string",
+          goal: "Look up {name} at {address}. Verify name AND address both match. Find the {milestone} status field and report it exactly as shown. Read-only.",
+          runs: 214, success: 91 },
+        { key: "stipStatus", risk: "read-only", enabled: true, status: "live", variants: [], timeout: 180, attempts: 2,
+          input: "name: string\naddress: string",
+          extract: "stipItems: array(name, status)\nopenCount: number",
+          goal: "Look up {name} at {address}, verify the match, then list all open stipulations with their status. Read-only.",
+          runs: 44, success: 88 },
+        { key: "fundingStatus", risk: "read-only", enabled: true, status: "live", variants: ["M1","M2","M3"], timeout: 180, attempts: 2,
+          input: "name: string\naddress: string\ntranche: enum(M1 | M2 | M3)",
+          extract: "tranche: string\nfundedAt: string\namount: string",
+          goal: "Open the verified record, find funding tranche {tranche}, report funded date and amount. Read-only.",
+          runs: 31, success: 84 },
+        { key: "accountSnapshot", risk: "read-only", enabled: false, status: "draft", variants: [], timeout: 240, attempts: 2,
+          input: "name: string\naddress: string",
+          extract: "stage: string\nntpDate: string\nptoDate: string\nlender: string\nsystemSizeKw: number",
+          goal: "Open the verified record and read the full status panel. Read-only.",
+          runs: 0, success: 0 },
+        { key: "documentsList", risk: "read-only", enabled: false, status: "draft", variants: [], timeout: 180, attempts: 2,
+          input: "name: string\naddress: string",
+          extract: "documents: array(name, status, uploadedAt)",
+          goal: "Open the verified record's documents tab and list every document with its status. Read-only.",
+          runs: 0, success: 0 }
+      ],
+      clients: [
+        { key: "lgcyco", enabled: true, credOk: true, lastRead: "3m ago", ctx: "warm", ctxAge: "2d", overrides: {} },
+        { key: "brandx", enabled: true, credOk: true, lastRead: "1h ago", ctx: "warm", ctxAge: "5d",
+          overrides: { milestoneStatus: { labels: "NTP Date -> Notice to Proceed Date\nPTO -> Permission to Operate", hints: "Status fields live in the right-hand summary rail, not the main table.", url: "", timeout: null } } },
+        { key: "acmesolar", enabled: true, credOk: true, lastRead: "2h ago", ctx: "cold", ctxAge: null, overrides: {} },
+        { key: "sunpath", enabled: true, credOk: false, lastErr: "LOGIN_FAILED", lastRead: "failed 41m ago", ctx: "expired", ctxAge: "19d", overrides: {} },
+        { key: "voltic", enabled: false, credOk: true, lastRead: "6h ago", ctx: "cold", ctxAge: null,
+          overrides: { milestoneStatus: { labels: "", hints: "", url: "https://voltic.palmetto.finance/accounts", timeout: 240 } } },
+        { key: "heliora", enabled: true, credOk: true, lastRead: "20m ago", ctx: "warm", ctxAge: "1d", overrides: {} }
+      ]
+    },
+    {
+      key: "acme", name: "Acme Vendor Portal", vault: "Portals", url: "https://portal.acme.com",
+      actions: [
+        { key: "invoiceStatus", risk: "read-only", enabled: true, status: "live", variants: [], timeout: 120, attempts: 2,
+          input: "invoiceId: string", extract: "status: string\npaidAt: string\namount: string",
+          goal: "Find invoice {invoiceId} and report its status and paid date. Read-only.", runs: 61, success: 85 }
+      ],
+      clients: [
+        { key: "default", enabled: true, credOk: true, lastRead: "58s ago", ctx: "cold", ctxAge: null, overrides: {} },
+        { key: "brandx", enabled: true, credOk: true, lastRead: "3h ago", ctx: "cold", ctxAge: null, overrides: {} }
+      ]
+    },
+    {
+      key: "govnet", name: "GovNet Permits", vault: "GovSites", url: "https://permits.govnet.example",
+      actions: [
+        { key: "permitStatus", risk: "read-only", enabled: true, status: "live", variants: [], timeout: 240, attempts: 3,
+          input: "permitNo: string\ncounty: string", extract: "permitStatus: string\nissuedAt: string\ninspector: string",
+          goal: "Search permit {permitNo} in {county} county and report its status. Read-only.", runs: 13, success: 38 }
+      ],
+      clients: [
+        { key: "default", enabled: true, credOk: false, lastErr: "AUTH_REQUIRED", lastRead: "failed 22m ago", ctx: "expired", ctxAge: "31d", overrides: {} }
+      ]
+    }
+  ],
+  vaults: [
+    { name: "Portals", items: 8, sa: "sa-gateway-portals", tokenAge: 14, rate: 31 },
+    { name: "GovSites", items: 1, sa: "sa-gateway-govsites", tokenAge: 96, rate: 4, warn: true }
+  ],
+  callers: [
+    { name: "intake-app", token: "gw_live_....c41f", created: "2026-05-02", rate: 60, runs: 265, active: true,
+      scopes: [ { uc: "lightreach.milestoneStatus", clients: "lgcyco, brandx" }, { uc: "lightreach.stipStatus", clients: "lgcyco" } ] },
+    { name: "ops-dashboard", token: "gw_live_....98aa", created: "2026-06-11", rate: 30, runs: 122, active: true,
+      scopes: [ { uc: "lightreach.milestoneStatus", clients: "*" }, { uc: "acme.invoiceStatus", clients: "*" }, { uc: "govnet.permitStatus", clients: "*" } ] }
+  ],
+  jobs: [
+    { id: "j_9f2e1", uc: "lightreach.milestoneStatus", client: "lgcyco", caller: "intake-app", state: "RUNNING", status: null, dur: "168s", elapsed: 168, at: "12:41:05", data: null, err: null, stuck: true },
+    { id: "j_8c77b", uc: "acme.invoiceStatus", client: "default", caller: "ops-dashboard", state: "RUNNING", status: null, dur: "12s", elapsed: 12, at: "12:41:27", data: null, err: null },
+    { id: "j_71d0a", uc: "lightreach.milestoneStatus", client: "brandx", caller: "intake-app", state: "QUEUED", status: null, dur: null, at: "12:41:44", data: null, err: null },
+    { id: "j_66e19", uc: "lightreach.milestoneStatus", client: "lgcyco", caller: "intake-app", state: "DONE", status: "success", dur: "39s", at: "12:38:02", data: { milestone: "NTP", value: "2026-06-30", matchVerified: true }, err: null },
+    { id: "j_5fa11", uc: "acme.invoiceStatus", client: "brandx", caller: "ops-dashboard", state: "DONE", status: "success", dur: "22s", at: "12:35:41", data: { status: "Paid", paidAt: "2026-07-01", amount: "$4,120" }, err: null },
+    { id: "j_65aa0", uc: "lightreach.milestoneStatus", client: "brandx", caller: "intake-app", state: "DONE", status: "failure", dur: "44s", at: "12:31:19", data: { matchVerified: false, recordFound: true }, err: { code: "MATCH_FAILED", message: "Address differs: 125 Solar Way vs 123 Solar Way", fields: ["address"] } },
+    { id: "j_5e0c2", uc: "lightreach.milestoneStatus", client: "acmesolar", caller: "intake-app", state: "DONE", status: "failure", dur: "37s", at: "12:27:03", data: { recordFound: false }, err: { code: "RECORD_NOT_FOUND", message: "No record matched name + address in the account search" } },
+    { id: "j_64f3c", uc: "govnet.permitStatus", client: "default", caller: "ops-dashboard", state: "DONE", status: "error", dur: "18s", at: "12:22:51", data: null, err: { code: "AUTH_REQUIRED", message: "Login page shown, credentials rejected" } },
+    { id: "j_63b8d", uc: "lightreach.milestoneStatus", client: "sunpath", caller: "ops-dashboard", state: "DONE", status: "error", dur: "21s", at: "12:19:40", data: null, err: { code: "LOGIN_FAILED", message: "Credentials rejected for sunpath login" } },
+    { id: "j_62c44", uc: "lightreach.fundingStatus", client: "lgcyco", caller: "ops-dashboard", state: "DONE", status: "success", dur: "36s", at: "12:07:12", data: { tranche: "M1", fundedAt: "2026-07-02", amount: "$18,400" }, err: null },
+    { id: "j_5d7b3", uc: "lightreach.stipStatus", client: "lgcyco", caller: "intake-app", state: "DONE", status: "success", dur: "29s", at: "12:03:55", data: { openCount: 1, stipItems: [{ name: "Proof of ownership", status: "open" }] }, err: null },
+    { id: "j_61a02", uc: "lightreach.milestoneStatus", client: "heliora", caller: "intake-app", state: "DONE", status: "error", dur: "181s", at: "11:58:47", data: null, err: { code: "TIMEOUT", message: "Run exceeded 180s at step search" } },
+    { id: "j_5c934", uc: "lightreach.fundingStatus", client: "heliora", caller: "ops-dashboard", state: "DONE", status: "error", dur: "52s", at: "11:55:10", data: null, err: { code: "NAVIGATION_ERROR", message: "Funding tab did not load after login, page structure changed" } },
+    { id: "j_60d91", uc: "lightreach.stipStatus", client: "lgcyco", caller: "intake-app", state: "DONE", status: "success", dur: "41s", at: "11:52:30", data: { openCount: 2, stipItems: [{ name: "Proof of ownership", status: "open" }, { name: "Utility bill", status: "open" }] }, err: null }
+  ],
+  canaries: [
+    { p: "lightreach", c: "lgcyco", schedule: "daily 06:00", last: "success", ago: "4h ago", drift: false, hist: ["ok","ok","ok","ok","ok","ok","ok"], on: true },
+    { p: "lightreach", c: "brandx", schedule: "daily 06:00", last: "success", ago: "4h ago", drift: true, hist: ["ok","ok","fail","ok","ok","ok","ok"], on: true },
+    { p: "lightreach", c: "acmesolar", schedule: "daily 06:00", last: "success", ago: "4h ago", drift: false, hist: ["ok","ok","ok","ok","fail","ok","ok"], on: true },
+    { p: "lightreach", c: "sunpath", schedule: "daily 06:00", last: "failure", ago: "4h ago", drift: false, hist: ["ok","ok","fail","fail","fail","fail","fail"], on: true },
+    { p: "lightreach", c: "heliora", schedule: "daily 06:00", last: "success", ago: "4h ago", drift: false, hist: ["ok","err","ok","ok","ok","ok","ok"], on: true },
+    { p: "acme", c: "default", schedule: "daily 07:00", last: "success", ago: "3h ago", drift: false, hist: ["ok","ok","ok","ok","ok","ok","ok"], on: true },
+    { p: "govnet", c: "default", schedule: "hourly", last: "error", ago: "41m ago", drift: false, hist: ["fail","err","err","err","err","err","err"], on: true }
+  ],
+  alertRules: {
+    errorRate: { on: true, threshold: 15 },
+    credFail: { on: true },
+    drift: { on: true },
+    rateLimit: { on: true, threshold: 80 },
+    webhook: "https://hooks.slack.com/services/T02.../eng-automation"
+  },
+  alertInbox: [
+    { at: "12:20", sev: "danger", title: "Credential failure", body: "govnet / default returned AUTH_REQUIRED" },
+    { at: "12:19", sev: "danger", title: "Credential failure", body: "lightreach / sunpath returned LOGIN_FAILED" },
+    { at: "06:04", sev: "warning", title: "Layout drift", body: "lightreach / brandx canary passed using a label fallback" }
+  ],
+  flags: [
+    { key: "contexts", t1: "Browserbase Contexts per client", t2: "Warm login per platform and client, fall back to JIT creds", on: false },
+    { key: "opsdk", t1: "1Password SDK (replace op CLI)", t2: "Better for a long-running service", on: false },
+    { key: "redis", t1: "Durable job store (Redis)", t2: "Required before running multiple replicas", on: false },
+    { key: "webhooks", t1: "Webhooks to callers", t2: "Push DONE instead of polling", on: false },
+    { key: "pino", t1: "Structured pino logging", t2: "JSON logs with caller correlation IDs", on: true },
+    { key: "express", t1: "Express migration", t2: "Replace bare node:http with the house REST standard", on: false }
+  ],
+  audit: [
+    { at: "2026-07-11 09:14", who: "andy@gojobengine.com", what: "Added client override on lightreach.milestoneStatus for brandx (label map)" },
+    { at: "2026-07-10 17:02", who: "andy@gojobengine.com", what: "Rotated service account token for vault Portals" },
+    { at: "2026-07-10 16:44", who: "andy@gojobengine.com", what: "Added client voltic to lightreach (custom URL override)" },
+    { at: "2026-07-09 11:20", who: "andy@gojobengine.com", what: "Issued caller token ops-dashboard, 3 scopes" },
+    { at: "2026-07-08 15:31", who: "andy@gojobengine.com", what: "Created action lightreach.fundingStatus with variants M1, M2, M3" }
+  ],
+  days: [ [46,5,3],[52,4,2],[63,7,3],[55,3,3],[58,6,2],[47,4,4],[51,4,3] ],
+  errorCodes: [
+    { code: "AUTH_REQUIRED", stage: "login", family: "error", meaning: "Portal demanded auth the agent could not satisfy" },
+    { code: "LOGIN_FAILED", stage: "login", family: "error", meaning: "Credentials submitted but rejected by the portal" },
+    { code: "SEARCH_FAILED", stage: "search", family: "error", meaning: "Search UI did not return usable results" },
+    { code: "RECORD_NOT_FOUND", stage: "search", family: "failure", meaning: "No record matched the input after a valid search" },
+    { code: "MATCH_FAILED", stage: "verify", family: "failure", meaning: "A record was found but identity verification did not pass" },
+    { code: "FIELD_NOT_FOUND", stage: "extract", family: "failure", meaning: "Verified record lacked the requested field" },
+    { code: "NAVIGATION_ERROR", stage: "execute", family: "error", meaning: "Page structure changed, agent could not navigate" },
+    { code: "TIMEOUT", stage: "any", family: "error", meaning: "Run exceeded the configured timeout" }
+  ]
+};
+
+/* ============================================================
+   HELPERS
+   ============================================================ */
+const $ = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+const view = () => $("#view");
+function icon(n, cls) { return '<svg class="ic ' + (cls || "") + '" aria-hidden="true"><use href="#i-' + n + '"/></svg>'; }
+function plat(k) { return state.platforms.find(p => p.key === k); }
+function esc(s) { return String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function nowTime() { return new Date().toTimeString().slice(0,8); }
+function nowStamp() { return "2026-07-11 " + new Date().toTimeString().slice(0,5); }
+
+function runningJobs() { return state.jobs.filter(j => j.state === "RUNNING"); }
+function failingCreds() { return state.platforms.flatMap(p => p.clients.filter(c => !c.credOk).map(c => ({ p: p.key, vault: p.vault, c }))); }
+function redCanaries() { return state.canaries.filter(c => c.last === "failure" || c.last === "error"); }
+function driftCanaries() { return state.canaries.filter(c => c.drift); }
+function jobsForClient(pk, ck) { return state.jobs.filter(j => j.uc.split(".")[0] === pk && j.client === ck); }
+
+function pill(kind, label) { return '<span class="pill pill-' + kind + '"><span class="dot"></span>' + esc(label) + '</span>'; }
+function outcomePill(status, errCode) {
+  if (!status) return '<span class="muted">-</span>';
+  const label = errCode || status;
+  return '<span class="pill pill-' + status + '"><span class="dot"></span>' + esc(label) + '</span>';
+}
+function lifecycleChip(stateVal) {
+  const map = { RUNNING: "chip-running", QUEUED: "chip-queued", DONE: "chip-done" };
+  const label = { RUNNING: "running", QUEUED: "queued", DONE: "done" }[stateVal] || stateVal.toLowerCase();
+  return '<span class="chip ' + (map[stateVal] || "") + '"><span class="dot"></span>' + label + '</span>';
+}
+function ctxChip(ctx) { return '<span class="chip ctx-' + ctx + '"><span class="dot"></span>' + ctx + '</span>'; }
+function riskChip(risk) {
+  return risk === "read-only"
+    ? '<span class="tag">read-only</span>'
+    : '<span class="tag tag-warning">' + esc(risk) + '</span>';
+}
+
+function toast(msg, ok) {
+  const wrap = $("#toast-wrap");
+  const el = document.createElement("div");
+  el.className = "toast";
+  el.innerHTML = icon(ok === false ? "alert" : "check") + "<span>" + esc(msg) + "</span>";
+  wrap.appendChild(el);
+  requestAnimationFrame(() => el.classList.add("show"));
+  setTimeout(() => { el.classList.remove("show"); setTimeout(() => el.remove(), 250); }, 2800);
+}
+function audit(what) {
+  state.audit.unshift({ at: nowStamp(), who: "andy@gojobengine.com", what });
+  if (currentTop() === "audit") renderAudit();
+}
+function openDrawer(head, body, foot) {
+  const d = $("#drawer");
+  d.innerHTML =
+    '<div class="drawer-head">' + head + '<button class="icon-btn" aria-label="Close" onclick="closeDrawer()">' + icon("close") + '</button></div>' +
+    '<div class="drawer-body">' + body + '</div>' +
+    (foot ? '<div class="drawer-foot">' + foot + '</div>' : "");
+  d.classList.add("open");
+}
+function closeDrawer() { $("#drawer").classList.remove("open"); }
+function openModal(html, wide) {
+  $("#modal").className = "modal" + (wide ? " modal-wide" : "");
+  $("#modal").innerHTML = html;
+  $("#scrim").classList.add("open");
+}
+function closeModal() { $("#scrim").classList.remove("open"); }
+$("#scrim").addEventListener("click", e => { if (e.target === $("#scrim")) closeModal(); });
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") { closeModal(); closeDrawer(); }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); openPalette(); }
+});
+function confirmModal(title, body, confirmLabel, fn, danger) {
+  openModal(
+    '<div class="modal-head"><h2>' + esc(title) + '</h2></div>' +
+    '<div class="modal-body"><p class="txt2">' + body + '</p></div>' +
+    '<div class="modal-foot"><button class="btn" onclick="closeModal()">Cancel</button>' +
+    '<button class="btn ' + (danger ? "btn-danger" : "btn-primary") + '" id="cf-yes">' + esc(confirmLabel) + '</button></div>');
+  $("#cf-yes").onclick = () => { closeModal(); fn(); };
+}
+function copyText(text, label) {
+  if (navigator.clipboard) navigator.clipboard.writeText(text).catch(() => {});
+  toast((label || "Copied") + " to clipboard");
+}
+
+/* ============================================================
+   NAV + ROUTER
+   ============================================================ */
+function currentTop() { return (location.hash.replace(/^#\/?/, "").split("?")[0].split("/")[0]) || "home"; }
+function renderNav() {
+  const running = runningJobs().length;
+  const badFC = failingCreds().length;
+  const redC = redCanaries().length;
+  const items = [
+    { g: null, list: [
+      { top: "home", label: "Home", icon: "home" },
+      { top: "jobs", label: "Jobs", icon: "jobs", badge: running ? { t: running + " running", c: "accent" } : null },
+      { top: "catalogue", label: "Catalogue", icon: "catalogue", badge: { t: state.platforms.length, c: "" } },
+      { top: "secrets", label: "Secrets", icon: "secrets", badge: badFC ? { t: badFC, c: "danger" } : null },
+      { top: "access", label: "Access", icon: "access", badge: { t: state.callers.length, c: "" } }
+    ]},
+    { g: "Operations", list: [
+      { top: "canaries", label: "Canaries & Alerts", icon: "canary", badge: redC ? { t: redC, c: "danger" } : null },
+      { top: "audit", label: "Audit", icon: "audit" }
+    ]},
+    { g: null, list: [
+      { top: "settings", label: "Settings", icon: "settings" },
+      { top: "docs", label: "Docs", icon: "docs" }
+    ]}
+  ];
+  const cur = currentTop();
+  $("#nav").innerHTML = items.map(sec =>
+    (sec.g ? '<div class="nav-group">' + sec.g + '</div>' : "") +
+    sec.list.map(it =>
+      '<a class="nav-item' + (it.top === cur ? " active" : "") + '" href="#/' + it.top + '">' +
+      icon(it.icon) + '<span class="lbl">' + it.label + '</span>' +
+      (it.badge ? '<span class="nav-badge ' + it.badge.c + '">' + it.badge.t + '</span>' : "") +
+      '</a>'
+    ).join("")
+  ).join("");
+  $("#bell-count").textContent = state.alertInbox.length;
+}
+
+function parseHash() {
+  const raw = location.hash.replace(/^#\/?/, "") || "home";
+  const [path, query] = raw.split("?");
+  const seg = path.split("/");
+  const params = {};
+  if (query) query.split("&").forEach(kv => { const [k, v] = kv.split("="); params[k] = decodeURIComponent(v || ""); });
+  return { seg, params, top: seg[0] };
+}
+const routes = {
+  home: renderHome, jobs: renderJobs, catalogue: renderCatalogue, secrets: renderSecrets,
+  access: renderAccess, canaries: renderCanaries, audit: renderAudit, settings: renderSettings, docs: renderDocs
+};
+function router() {
+  const { seg, params, top } = parseHash();
+  renderNav();
+  closeDrawer();
+  if (top === "catalogue" && seg[1]) { renderPlatformDetail(seg[1], params.tab || "actions"); }
+  else { (routes[top] || renderHome)(params); }
+  window.scrollTo(0, 0);
+}
+window.addEventListener("hashchange", router);
+function go(hash) { location.hash = hash; }
+
+/* command palette */
+function openPalette() {
+  const dests = [
+    { h: "#/home", l: "Home / Triage", i: "home" },
+    { h: "#/jobs", l: "Jobs", i: "jobs" },
+    { h: "#/catalogue", l: "Catalogue", i: "catalogue" },
+    { h: "#/catalogue/lightreach", l: "LightReach / Palmetto", i: "catalogue" },
+    { h: "#/secrets", l: "Secrets", i: "secrets" },
+    { h: "#/access", l: "Access", i: "access" },
+    { h: "#/canaries", l: "Canaries & Alerts", i: "canary" },
+    { h: "#/audit", l: "Audit", i: "audit" },
+    { h: "#/settings", l: "Settings", i: "settings" },
+    { h: "#/docs", l: "Docs", i: "docs" }
+  ];
+  openModal(
+    '<div class="modal-body" style="padding-top:16px">' +
+    '<div class="input-icon">' + icon("search") + '<input type="text" id="pal-q" placeholder="Jump to a view" autocomplete="off"></div>' +
+    '<div id="pal-list" style="margin-top:12px;display:flex;flex-direction:column;gap:2px"></div>' +
+    '</div>');
+  const render = (q) => {
+    const list = dests.filter(d => d.l.toLowerCase().includes((q || "").toLowerCase()));
+    $("#pal-list").innerHTML = list.length ? list.map(d =>
+      '<button class="step-btn" onclick="closeModal();go(\'' + d.h + '\')">' +
+      icon(d.i) + '<span class="st1">' + d.l + '</span><span class="spacer"></span>' + icon("arrow") + '</button>'
+    ).join("") : '<div class="empty" style="padding:24px">' + icon("search") + '<div class="t2">No views match</div></div>';
+  };
+  render("");
+  const inp = $("#pal-q");
+  inp.focus();
+  inp.addEventListener("input", () => render(inp.value));
+}
+$("#cmdk-trigger").addEventListener("click", openPalette);
+$("#bell-btn").addEventListener("click", () => go("#/canaries"));
+
+/* generic toggle click via delegation for role=switch buttons with data-toggle */
+document.addEventListener("click", e => {
+  const t = e.target.closest("[data-toggle]");
+  if (t && !t.disabled) {
+    const on = t.getAttribute("aria-checked") === "true";
+    t.setAttribute("aria-checked", on ? "false" : "true");
+  }
+}, true);
+
+/* ============================================================
+   RENDER FUNCTIONS
+   ============================================================ */
+/* ---------------- HOME / TRIAGE ---------------- */
+function attentionFeed() {
+  const cards = [];
+  failingCreds().forEach(fc => {
+    cards.push({ sev: "danger", ic: "key",
+      t1: fc.p + " / " + fc.c.key + " login is failing",
+      t2: "Returns " + fc.c.lastErr + ". Every job for this pair errors until the credential is fixed in 1Password.",
+      cta: "Fix credential", href: "#/secrets" });
+  });
+  redCanaries().forEach(cn => {
+    cards.push({ sev: "danger", ic: "canary",
+      t1: cn.p + " / " + cn.c + " canary is red",
+      t2: "Last scheduled run returned " + cn.last + " (" + cn.ago + "). Independent of credential health.",
+      cta: "Open canaries", href: "#/canaries" });
+  });
+  const hot = state.platforms.flatMap(p => p.actions.filter(a => a.runs > 0 && a.success < 45).map(a => ({ p, a })));
+  hot.forEach(h => {
+    cards.push({ sev: "warning", ic: "activity",
+      t1: h.p.key + "." + h.a.key + " has a high error rate",
+      t2: "Success " + h.a.success + "% over " + h.a.runs + " runs (7d). Investigate the portal or the goal.",
+      cta: "View jobs", href: "#/jobs?platform=" + h.p.key });
+  });
+  const stuck = state.jobs.find(j => j.state === "RUNNING" && j.stuck);
+  if (stuck) cards.push({ sev: "warning", ic: "clock",
+    t1: "Job " + stuck.id + " may be stuck",
+    t2: stuck.uc + " for " + stuck.client + " has been running " + stuck.dur + ", close to the 180s timeout.",
+    cta: "Open job", href: "#/jobs", job: stuck.id });
+  const oldV = state.vaults.find(v => v.tokenAge > 90);
+  if (oldV) cards.push({ sev: "warning", ic: "shield",
+    t1: "Service account token for " + oldV.name + " is aging",
+    t2: "Token is " + oldV.tokenAge + " days old. Rotate before it is disabled by policy.",
+    cta: "Rotate token", href: "#/secrets?tab=vaults" });
+  return cards;
+}
+function renderHome() {
+  const cards = attentionFeed();
+  const running = runningJobs();
+  const bad = failingCreds().length;
+  const kpis = [
+    { k: "Jobs (7d)", ic: "jobs", v: "387", d: "55 / day average" },
+    { k: "Success rate", ic: "check", v: "86.8%", cls: "v-ok", d: "failure 8.5%, error 4.7%" },
+    { k: "Running now", ic: "activity", v: running.length + " / 5", d: "of session cap" },
+    { k: "Median duration", ic: "clock", v: "41s", d: "p95 118s" },
+    { k: "Cred health", ic: "key", v: bad ? bad + " failing" : "healthy", cls: bad ? "v-bad" : "v-ok", d: bad ? "lightreach/sunpath, govnet" : "all logins ok" },
+    { k: "Est. cost (7d)", ic: "dollar", v: "$34.10", d: "LLM + browser minutes" }
+  ];
+  const max = Math.max.apply(null, state.days.map(d => d[0] + d[1] + d[2]));
+  const labels = ["Sat","Sun","Mon","Tue","Wed","Thu","Fri"];
+  const bars = state.days.map((d, i) => {
+    const h = v => (v / max * 128).toFixed(1);
+    return '<div class="bar-col"><div class="bar-stack">' +
+      '<div class="seg-ok" style="height:' + h(d[0]) + 'px" title="' + d[0] + ' success"></div>' +
+      '<div class="seg-fail" style="height:' + h(d[1]) + 'px" title="' + d[1] + ' failure"></div>' +
+      '<div class="seg-err" style="height:' + h(d[2]) + 'px" title="' + d[2] + ' error"></div>' +
+      '</div><div class="bar-lbl">' + labels[i] + '</div></div>';
+  }).join("");
+  const rangeChips = ["24h","7d","30d"].map(r =>
+    '<button class="' + (state.ui.range === r ? "on" : "") + '" onclick="setRange(\'' + r + '\')">' + r + '</button>').join("");
+
+  view().innerHTML =
+    '<div class="page-head"><div><h1 class="display">Triage</h1>' +
+    '<div class="sub">Last 7 days across all platforms and clients. Fix what is red first.</div></div>' +
+    '<div class="seg">' + rangeChips + '</div></div>' +
+
+    (cards.length ?
+      '<div class="section-head"><h2>Needs attention</h2><span class="tag">' + cards.length + ' items</span></div>' +
+      '<div class="feed">' + cards.map((c, i) =>
+        '<button class="att sev-' + c.sev + '" onclick="' + (c.job ? "showJob(\'" + c.job + "\')" : "go(\'" + c.href + "\')") + '">' +
+        '<span class="att-ic">' + icon(c.ic) + '</span>' +
+        '<span class="att-body"><span class="t1">' + esc(c.t1) + '</span>' +
+        '<span class="t2">' + esc(c.t2) + '</span>' +
+        '<span class="t3">' + c.cta + ' ' + icon("arrow") + '</span></span></button>'
+      ).join("") + '</div>'
+    : '') +
+
+    '<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr));margin-bottom:24px">' +
+    kpis.map(s =>
+      '<div class="stat"><div class="k">' + icon(s.ic) + s.k + '</div>' +
+      '<div class="v ' + (s.cls || "") + '">' + s.v + '</div><div class="d">' + s.d + '</div></div>'
+    ).join("") + '</div>' +
+
+    '<div class="grid" style="grid-template-columns:1.4fr 1fr">' +
+    '<div class="card"><div class="card-head"><h3>Runs per day</h3><span class="xs muted">stacked by outcome</span></div>' +
+    '<div class="bars">' + bars + '</div>' +
+    '<div class="legend"><span><i class="seg-ok"></i>success</span><span><i class="seg-fail"></i>failure</span><span><i class="seg-err"></i>error</span></div></div>' +
+
+    '<div class="card"><div class="card-head"><h3>Running now</h3><span class="tag">' + running.length + ' / 5</span></div>' +
+    (running.length ? '<div class="run-strip">' + running.map(j => {
+      const to = timeoutFor(j);
+      const pct = Math.min(96, Math.round((j.elapsed || 0) / to * 100));
+      return '<div class="run-item" onclick="showJob(\'' + j.id + '\')">' +
+        '<div class="hstack"><span class="mono">' + j.id + '</span>' + lifecycleChip("RUNNING") + '</div>' +
+        '<div class="right sm muted">' + j.dur + ' / ' + to + 's</div>' +
+        '<div class="mono xs muted" style="grid-column:1/-1">' + j.uc + ' · ' + j.client + '</div>' +
+        '<div class="prog"><div style="width:' + pct + '%"></div></div></div>';
+    }).join("") + '</div>' : '<div class="empty">' + icon("activity") + '<div class="t2">No sessions running</div></div>') +
+    '</div></div>';
+}
+function setRange(r) { state.ui.range = r; renderHome(); }
+function timeoutFor(j) {
+  const [pk, ak] = j.uc.split(".");
+  const p = plat(pk); const a = p && p.actions.find(x => x.key === ak);
+  return a ? a.timeout : 180;
+}
+
+/* ---------------- JOBS ---------------- */
+function jobFilterState() {
+  return state.ui.jobFilter || (state.ui.jobFilter = { q: "", platform: "", client: "", state: "", outcome: "", code: "" });
+}
+function filteredJobs() {
+  const f = jobFilterState();
+  return state.jobs.filter(j => {
+    const pk = j.uc.split(".")[0];
+    return (!f.q || (j.id + j.uc + j.client + j.caller).toLowerCase().includes(f.q.toLowerCase())) &&
+      (!f.platform || pk === f.platform) &&
+      (!f.client || j.client === f.client) &&
+      (!f.state || j.state === f.state) &&
+      (!f.outcome || j.status === f.outcome) &&
+      (!f.code || (j.err && j.err.code === f.code));
+  });
+}
+function renderJobs(params) {
+  const f = jobFilterState();
+  if (params) { if (params.platform) f.platform = params.platform; if (params.client) f.client = params.client; if (params.code) f.code = params.code; if (params.outcome) f.outcome = params.outcome; }
+  const clients = Array.from(new Set(state.platforms.flatMap(p => p.clients.map(c => c.key))));
+  const opt = (arr, sel) => arr.map(o => '<option value="' + o.v + '"' + (sel === o.v ? " selected" : "") + '>' + o.l + '</option>').join("");
+  view().innerHTML =
+    '<div class="page-head"><div><h1>Jobs</h1><div class="sub">Every run, newest first. Click a row for the full envelope.</div></div></div>' +
+    '<div class="toolbar">' +
+    '<div class="input-icon grow">' + icon("search") + '<input type="text" id="job-q" placeholder="Search job id, use case, client, caller" value="' + esc(f.q) + '"></div>' +
+    '<select id="job-platform">' + opt([{v:"",l:"All platforms"}].concat(state.platforms.map(p=>({v:p.key,l:p.key}))), f.platform) + '</select>' +
+    '<select id="job-client">' + opt([{v:"",l:"All clients"}].concat(clients.map(c=>({v:c,l:c}))), f.client) + '</select>' +
+    '<select id="job-state">' + opt([{v:"",l:"All states"},{v:"RUNNING",l:"running"},{v:"QUEUED",l:"queued"},{v:"DONE",l:"done"}], f.state) + '</select>' +
+    '<select id="job-outcome">' + opt([{v:"",l:"All outcomes"},{v:"success",l:"success"},{v:"failure",l:"failure"},{v:"error",l:"error"}], f.outcome) + '</select>' +
+    '<select id="job-code">' + opt([{v:"",l:"All error codes"}].concat(state.errorCodes.map(e=>({v:e.code,l:e.code}))), f.code) + '</select>' +
+    '<button class="btn btn-ghost btn-sm" onclick="clearJobFilters()">Clear</button>' +
+    '</div>' +
+    '<div class="bulk-bar" id="bulk-bar"><span id="bulk-count"></span><span class="spacer"></span>' +
+    '<button class="btn btn-sm" onclick="retrySelected()">' + icon("refresh") + 'Retry selected</button>' +
+    '<button class="btn btn-sm" onclick="clearSel()">Clear selection</button></div>' +
+    '<div class="tbl-wrap"><div class="tbl-scroll"><table id="jobs-tbl"></table></div></div>';
+
+  const bind = (id, key) => { const el = $("#" + id); el.addEventListener(key === "q" ? "input" : "change", () => { f[key] = el.value; renderJobsTable(); }); };
+  bind("job-q", "q"); bind("job-platform", "platform"); bind("job-client", "client");
+  bind("job-state", "state"); bind("job-outcome", "outcome"); bind("job-code", "code");
+  renderJobsTable();
+}
+function clearJobFilters() { state.ui.jobFilter = { q:"",platform:"",client:"",state:"",outcome:"",code:"" }; renderJobs(); }
+function renderJobsTable() {
+  const rows = filteredJobs();
+  const sel = state.ui.jobSel;
+  const head = '<thead><tr>' +
+    '<th class="tbl-check"><input type="checkbox" id="sel-all" aria-label="Select all" onclick="toggleAllSel(this)"></th>' +
+    '<th class="sortable">Job id ' + icon("chevron") + '</th><th>Use case</th><th>Client</th><th>Caller</th>' +
+    '<th>State</th><th>Outcome</th><th class="right sortable">Duration</th><th class="right">Started</th></tr></thead>';
+  const body = rows.length ? '<tbody>' + rows.map(j =>
+    '<tr class="tbl-row click" onclick="rowClick(event,\'' + j.id + '\')">' +
+    '<td class="tbl-check"><input type="checkbox" data-sel="' + j.id + '"' + (sel.has(j.id) ? " checked" : "") + ' onclick="toggleSel(event,\'' + j.id + '\')"></td>' +
+    '<td class="mono">' + j.id + '</td>' +
+    '<td class="mono">' + j.uc + '</td>' +
+    '<td><span class="tag tag-mono">' + j.client + '</span></td>' +
+    '<td class="sm txt2">' + j.caller + '</td>' +
+    '<td>' + lifecycleChip(j.state) + '</td>' +
+    '<td>' + outcomePill(j.status, j.err && j.err.code) + '</td>' +
+    '<td class="right nowrap">' + (j.dur || "-") + '</td>' +
+    '<td class="right nowrap sm txt2">' + j.at + '</td></tr>'
+  ).join("") + '</tbody>' :
+    '<tbody><tr><td colspan="9"><div class="empty">' + icon("search") +
+    '<div class="t1">No jobs match these filters</div><div class="t2">Try clearing the search or the selects above.</div></div></td></tr></tbody>';
+  $("#jobs-tbl").innerHTML = head + body;
+  updateBulkBar();
+}
+function rowClick(e, id) { if (e.target.closest("input")) return; showJob(id); }
+function toggleSel(e, id) { e.stopPropagation(); const s = state.ui.jobSel; if (s.has(id)) s.delete(id); else s.add(id); updateBulkBar(); }
+function toggleAllSel(cb) { const s = state.ui.jobSel; s.clear(); if (cb.checked) filteredJobs().forEach(j => s.add(j.id)); renderJobsTable(); }
+function clearSel() { state.ui.jobSel.clear(); renderJobsTable(); }
+function updateBulkBar() {
+  const n = state.ui.jobSel.size;
+  const bar = $("#bulk-bar");
+  if (!bar) return;
+  bar.classList.toggle("show", n > 0);
+  if (n > 0) $("#bulk-count").textContent = n + " job" + (n > 1 ? "s" : "") + " selected";
+}
+function retrySelected() {
+  const ids = Array.from(state.ui.jobSel);
+  ids.forEach(id => doRetry(id, true));
+  audit("Retried " + ids.length + " job(s) in bulk");
+  state.ui.jobSel.clear();
+  toast(ids.length + " retries queued");
+  renderJobsTable();
+}
+
+/* ---------------- JOB DRAWER ---------------- */
+function envelopeFor(j) {
+  const pk = j.uc.split(".")[0];
+  const p = plat(pk);
+  return {
+    status: j.status || "(pending)",
+    data: j.data,
+    error: j.err,
+    meta: {
+      jobId: j.id,
+      useCase: j.uc,
+      client: j.client,
+      sessionId: "bb_sess_" + j.id.slice(2),
+      sessionReplayUrl: "https://browserbase.com/sessions/bb_sess_" + j.id.slice(2),
+      credentialItem: "op://" + (p ? p.vault : "Portals") + "/" + pk + "." + j.client,
+      ranAt: "2026-07-11T" + j.at + "Z",
+      durationMs: j.dur ? parseInt(j.dur) * 1000 : null,
+      attempts: j.status === "error" ? 2 : 1
+    }
+  };
+}
+function stepTimeline(j) {
+  const steps = [
+    ["submit", "Request accepted, envelope opened"],
+    ["resolve", "Resolved " + j.uc + " to an action definition"],
+    ["validate", "Validated input against the zod schema"],
+    ["merge override", "Merged client override for " + j.client],
+    ["credentials", "Read op:// credential item just in time"],
+    ["launch", "Launched Browserbase session"],
+    ["login", "Logged into the portal"],
+    ["execute", "Ran the goal against the verified record"],
+    ["deliver", "Validated output, sealed the envelope"]
+  ];
+  let activeIdx = 7;
+  if (j.state === "QUEUED") activeIdx = 0;
+  return '<div class="timeline">' + steps.map((s, i) => {
+    let cls = "dim";
+    if (j.state === "DONE") cls = "done";
+    else if (i < activeIdx) cls = "done";
+    else if (i === activeIdx) cls = "active";
+    const mark = cls === "done" ? icon("check") : cls === "active" ? '<span class="pulse"></span>' : "";
+    return '<div class="tl-step ' + cls + '"><div class="tl-mark"><div class="tl-dot">' + mark + '</div>' +
+      (i < steps.length - 1 ? '<div class="tl-line"></div>' : "") + '</div>' +
+      '<div class="tl-body"><div class="t1">' + s[0] + '</div><div class="t2">' + esc(s[1]) + '</div></div></div>';
+  }).join("") + '</div>';
+}
+function showJob(id) {
+  const j = state.jobs.find(x => x.id === id);
+  if (!j) return;
+  const pk = j.uc.split(".")[0];
+  const ak = j.uc.split(".")[1];
+  const p = plat(pk);
+  const env = envelopeFor(j);
+  state.ui.envelopeMode = "pretty";
+  const raw = JSON.stringify(env, null, 2);
+  const pretty =
+    '<div class="kv" style="grid-template-columns:120px 1fr">' +
+    '<span class="k">Status</span><span class="v">' + outcomePill(j.status, j.err && j.err.code) + '</span>' +
+    (j.data ? '<span class="k">data</span><span class="v mono xs">' + esc(JSON.stringify(j.data)) + '</span>' : '') +
+    (j.err ? '<span class="k">error.code</span><span class="v"><span class="tag tag-warning">' + j.err.code + '</span></span>' +
+             '<span class="k">error.message</span><span class="v sm">' + esc(j.err.message) + '</span>' : '') +
+    '<span class="k">durationMs</span><span class="v mono xs">' + env.meta.durationMs + '</span>' +
+    '<span class="k">attempts</span><span class="v mono xs">' + env.meta.attempts + '</span>' +
+    '</div>';
+
+  const head = '<div class="drawer-title">' + icon("jobs", "ic-lg") +
+    '<div><h2>Job ' + j.id + '</h2><div class="xs muted mono">' + j.uc + '</div></div></div>';
+
+  const body =
+    '<div class="kv">' +
+    '<span class="k">Use case</span><span class="v"><a onclick="closeDrawer();openActionEditor(\'' + pk + '\',\'' + ak + '\')">' + j.uc + '</a></span>' +
+    '<span class="k">Client</span><span class="v"><a onclick="closeDrawer();go(\'#/catalogue/' + pk + '?tab=clients\')"><span class="tag tag-mono">' + j.client + '</span></a></span>' +
+    '<span class="k">Credential</span><span class="v"><a class="mono" onclick="closeDrawer();go(\'#/secrets\')">' + env.meta.credentialItem + '</a></span>' +
+    '<span class="k">Caller</span><span class="v"><a onclick="closeDrawer();go(\'#/access\')">' + j.caller + '</a></span>' +
+    '<span class="k">State</span><span class="v">' + lifecycleChip(j.state) + '</span>' +
+    '<span class="k">Outcome</span><span class="v">' + outcomePill(j.status, j.err && j.err.code) + '</span>' +
+    '<span class="k">Started</span><span class="v sm txt2">' + j.at + (j.dur ? ' · ' + j.dur : '') + '</span>' +
+    '</div>' +
+
+    (j.state !== "DONE" ?
+      '<div class="section-head"><h2>Progress</h2></div>' + stepTimeline(j) : '') +
+
+    '<div class="section-head"><h2>Session replay</h2></div>' +
+    '<div class="replay" onclick="toast(\'Would open the Browserbase session replay\')">' +
+    '<div class="play">' + icon("play", "ic-lg ic-fill") + '</div>' +
+    '<div class="cap">Open session replay · ' + env.meta.sessionId + '</div></div>' +
+
+    '<div class="section-head"><h2>Envelope</h2>' +
+    '<div class="hstack"><span class="tabset" id="env-tabs">' +
+    '<button class="on" onclick="setEnvMode(\'pretty\',\'' + j.id + '\')">Pretty</button>' +
+    '<button onclick="setEnvMode(\'raw\',\'' + j.id + '\')">Raw</button></span>' +
+    '<button class="btn btn-sm btn-ghost" id="copy-env">' + icon("copy") + 'Copy</button></div></div>' +
+    '<div id="env-block">' + pretty + '</div>';
+
+  const foot =
+    (j.state === "RUNNING" ? '<button class="btn btn-danger" onclick="cancelJob(\'' + j.id + '\')">' + icon("close") + 'Cancel run</button>' : '') +
+    (j.state === "DONE" && j.status !== "success" ? '<button class="btn btn-primary" onclick="retryJob(\'' + j.id + '\')">' + icon("refresh") + 'Retry job</button>' : '') +
+    '<span class="spacer"></span><button class="btn btn-ghost" onclick="closeDrawer()">Close</button>';
+
+  openDrawer(head, body, foot);
+  $("#drawer")._env = { pretty, raw };
+  $("#copy-env").onclick = () => copyText(raw, "Envelope");
+}
+function setEnvMode(mode, id) {
+  const d = $("#drawer");
+  $$("#env-tabs button").forEach((b, i) => b.classList.toggle("on", (mode === "pretty") === (i === 0)));
+  $("#env-block").innerHTML = mode === "pretty" ? d._env.pretty : '<pre>' + esc(d._env.raw) + '</pre>';
+}
+function doRetry(id, silent) {
+  const j = state.jobs.find(x => x.id === id);
+  if (!j) return;
+  const nid = "j_" + Math.random().toString(16).slice(2, 7);
+  state.jobs.unshift({ id: nid, uc: j.uc, client: j.client, caller: "admin (manual retry)", state: "QUEUED", status: null, dur: null, at: nowTime(), data: null, err: null });
+  if (!silent) audit("Manually retried job " + id + " as " + nid);
+  return nid;
+}
+function retryJob(id) {
+  const nid = doRetry(id);
+  renderNav();
+  if (currentTop() === "jobs") renderJobsTable();
+  closeDrawer();
+  toast("Retry queued as " + nid);
+}
+function cancelJob(id) {
+  confirmModal("Cancel running job?", "<strong>" + id + "</strong> will be stopped and its envelope sealed with error code CANCELLED.", "Cancel run", () => {
+    const j = state.jobs.find(x => x.id === id);
+    j.state = "DONE"; j.status = "error"; j.err = { code: "CANCELLED", message: "Cancelled by admin" }; j.stuck = false;
+    audit("Cancelled job " + id);
+    renderNav();
+    if (currentTop() === "jobs") renderJobsTable();
+    closeDrawer();
+    toast("Job cancelled");
+  }, true);
+}
+/* ---------------- CATALOGUE ---------------- */
+function renderCatalogue() {
+  view().innerHTML =
+    '<div class="page-head"><div><h1>Catalogue</h1>' +
+    '<div class="sub">Organized per platform, then per client. An action is defined once; clients override navigation only.</div></div>' +
+    '<button class="btn btn-primary" onclick="newPlatformWizard(1)">' + icon("plus") + 'New platform</button></div>' +
+    '<div class="tbl-wrap"><div class="tbl-scroll"><table>' +
+    '<thead><tr><th>Platform</th><th>Vault</th><th>Actions</th><th>Clients</th><th class="right">Runs 7d</th><th>Health</th><th></th></tr></thead><tbody>' +
+    state.platforms.map(p => {
+      const runs = p.actions.reduce((s, a) => s + a.runs, 0);
+      const bad = p.clients.filter(c => !c.credOk).length;
+      const live = p.actions.filter(a => a.status === "live").length;
+      return '<tr class="tbl-row click" onclick="go(\'#/catalogue/' + p.key + '\')">' +
+        '<td><div class="hstack">' + icon("catalogue") + '<div><strong>' + p.name + '</strong>' +
+        '<div class="xs muted mono">' + p.key + '</div></div></div></td>' +
+        '<td><span class="tag">' + p.vault + '</span></td>' +
+        '<td class="sm">' + p.actions.length + ' <span class="muted">(' + live + ' live)</span></td>' +
+        '<td class="sm">' + p.clients.length + '</td>' +
+        '<td class="right">' + runs + '</td>' +
+        '<td>' + (bad ? pill("bad", bad + " cred issue" + (bad > 1 ? "s" : "")) : pill("healthy", "healthy")) + '</td>' +
+        '<td class="right">' + icon("chevron", "") + '</td></tr>';
+    }).join("") + '</tbody></table></div></div>';
+}
+function renderPlatformDetail(key, tab) {
+  const p = plat(key);
+  if (!p) return renderCatalogue();
+  tab = tab || "actions";
+  const bad = p.clients.filter(c => !c.credOk).length;
+  const tabBtn = (id, label, count) =>
+    '<button class="' + (tab === id ? "on" : "") + '" onclick="go(\'#/catalogue/' + key + '?tab=' + id + '\')">' + label + ' <span class="muted">' + count + '</span></button>';
+
+  let content = "";
+  if (tab === "actions") {
+    content =
+      '<div class="section-head"><h2>Actions</h2><button class="btn btn-sm btn-primary" onclick="openActionEditor(\'' + key + '\',null)">' + icon("plus") + 'New action</button></div>' +
+      '<div class="tbl-wrap"><div class="tbl-scroll"><table><thead><tr>' +
+      '<th>Action</th><th>Variants</th><th>Risk</th><th class="right">Runs 7d</th><th>Success</th><th>Status</th><th>Enabled</th><th></th></tr></thead><tbody>' +
+      p.actions.map((a, i) =>
+        '<tr><td class="mono">' + a.key + '</td>' +
+        '<td class="wrap-chips">' + (a.variants.length ? a.variants.map(v => '<span class="tag">' + v + '</span>').join("") : '<span class="muted">-</span>') + '</td>' +
+        '<td>' + riskChip(a.risk) + '</td>' +
+        '<td class="right">' + a.runs + '</td>' +
+        '<td>' + (a.runs ? '<span class="' + (a.success < 45 ? "v-bad" : a.success < 75 ? "v-warn" : "v-ok") + '" style="font-weight:600">' + a.success + '%</span>' : '<span class="muted">-</span>') + '</td>' +
+        '<td>' + (a.status === "live" ? '<span class="tag tag-info">live</span>' : '<span class="tag">draft</span>') + '</td>' +
+        '<td><button class="tgl" role="switch" data-toggle aria-checked="' + a.enabled + '" aria-label="Enable ' + a.key + '" onclick="toggleAction(\'' + key + '\',' + i + ',this)"></button></td>' +
+        '<td class="nowrap"><button class="btn btn-sm btn-ghost" onclick="openActionEditor(\'' + key + '\',\'' + a.key + '\')">' + icon("edit") + 'Edit</button> ' +
+        '<button class="btn btn-sm btn-ghost" onclick="testAction(\'' + key + '\',\'' + a.key + '\')">' + icon("play") + 'Test</button></td></tr>'
+      ).join("") + '</tbody></table></div></div>';
+  } else if (tab === "clients") {
+    content =
+      '<div class="section-head"><h2>Clients</h2><button class="btn btn-sm btn-primary" onclick="addClientModal(\'' + key + '\')">' + icon("plus") + 'New client</button></div>' +
+      '<div class="tbl-wrap"><div class="tbl-scroll"><table><thead><tr>' +
+      '<th>Client</th><th>1Password item</th><th>Cred health</th><th>Context</th><th>Overrides</th><th>Enabled</th><th></th></tr></thead><tbody>' +
+      p.clients.map((c, i) => {
+        const ov = Object.keys(c.overrides);
+        return '<tr><td><span class="tag tag-mono">' + c.key + '</span></td>' +
+          '<td class="mono xs">op://' + p.vault + '/' + p.key + '.' + c.key + '</td>' +
+          '<td>' + (c.credOk ? pill("healthy", "healthy") : pill("bad", c.lastErr)) + '</td>' +
+          '<td>' + ctxChip(c.ctx) + (c.ctxAge ? ' <span class="xs muted">' + c.ctxAge + '</span>' : '') + '</td>' +
+          '<td class="wrap-chips">' + (ov.length ? ov.map(k => '<span class="tag tag-accent">' + k + '</span>').join("") : '<span class="tag tag-none">base</span>') + '</td>' +
+          '<td><button class="tgl" role="switch" data-toggle aria-checked="' + c.enabled + '" aria-label="Enable ' + c.key + '" onclick="toggleClient(\'' + key + '\',' + i + ',this)"></button></td>' +
+          '<td class="nowrap"><button class="btn btn-sm btn-ghost" onclick="testLogin(\'' + key + '\',' + i + ')">' + icon("play") + 'Test login</button></td></tr>';
+      }).join("") + '</tbody></table></div></div>' +
+      '<div class="note accent">' + icon("info") + '<div>Disabling a client blocks jobs for every action on ' + key + ' for that brand. Overrides adjust navigation (labels, URL, hints) per client; the extract schema is locked at the action level so callers always get one shape.</div></div>';
+  } else {
+    const jobs = state.jobs.filter(j => j.uc.split(".")[0] === key);
+    content =
+      '<div class="section-head"><h2>Recent jobs</h2><button class="btn btn-sm btn-ghost" onclick="go(\'#/jobs?platform=' + key + '\')">Open in Jobs ' + icon("arrow") + '</button></div>' +
+      '<div class="tbl-wrap"><div class="tbl-scroll"><table><thead><tr><th>Job id</th><th>Use case</th><th>Client</th><th>State</th><th>Outcome</th><th class="right">Started</th></tr></thead><tbody>' +
+      jobs.map(j => '<tr class="tbl-row click" onclick="showJob(\'' + j.id + '\')"><td class="mono">' + j.id + '</td><td class="mono">' + j.uc + '</td>' +
+        '<td><span class="tag tag-mono">' + j.client + '</span></td><td>' + lifecycleChip(j.state) + '</td><td>' + outcomePill(j.status, j.err && j.err.code) + '</td>' +
+        '<td class="right sm txt2 nowrap">' + j.at + '</td></tr>').join("") + '</tbody></table></div></div>';
+  }
+
+  view().innerHTML =
+    '<div class="crumbs"><a onclick="go(\'#/catalogue\')">Catalogue</a>' + icon("chevron") + '<span>' + p.key + '</span></div>' +
+    '<div class="page-head"><div><div class="hstack">' + icon("catalogue", "ic-lg") + '<h1>' + p.name + '</h1>' +
+    (bad ? pill("bad", bad + " cred issue" + (bad > 1 ? "s" : "")) : pill("healthy", "healthy")) + '</div>' +
+    '<div class="sub mono" style="margin-top:6px">' + p.url + ' · vault: ' + p.vault + '</div></div></div>' +
+    '<div class="tabset" style="margin-bottom:18px">' +
+    tabBtn("actions", "Actions", p.actions.length) + tabBtn("clients", "Clients", p.clients.length) + tabBtn("jobs", "Jobs", state.jobs.filter(j => j.uc.split(".")[0] === key).length) +
+    '</div>' + content;
+}
+function toggleAction(pk, i, el) {
+  const a = plat(pk).actions[i];
+  a.enabled = el.getAttribute("aria-checked") === "true";
+  audit((a.enabled ? "Enabled" : "Disabled") + " action " + pk + "." + a.key);
+  toast(pk + "." + a.key + " " + (a.enabled ? "enabled" : "disabled"));
+}
+function toggleClient(pk, i, el) {
+  const c = plat(pk).clients[i];
+  c.enabled = el.getAttribute("aria-checked") === "true";
+  audit((c.enabled ? "Enabled" : "Disabled") + " client " + c.key + " on " + pk);
+  toast(pk + " / " + c.key + " " + (c.enabled ? "enabled" : "disabled"));
+}
+function addClientModal(pk) {
+  const p = plat(pk);
+  openModal(
+    '<div class="modal-head"><h2>New client on ' + pk + '</h2></div>' +
+    '<div class="modal-body"><label class="f">Client key</label>' +
+    '<input type="text" id="nc-key" placeholder="brandname" oninput="$(\'#nc-prev\').textContent=\'op://' + p.vault + '/' + pk + '.\'+(this.value||\'<client>\')">' +
+    '<label class="f">1Password item that will be created</label><div class="mono" id="nc-prev" style="padding:8px 11px;background:var(--surface-2);border-radius:var(--r-md)">op://' + p.vault + '/' + pk + '.&lt;client&gt;</div>' +
+    '<div class="note accent">' + icon("info") + '<div>The item holds the whitelabel login. Overrides for navigation can be added after the first live run.</div></div></div>' +
+    '<div class="modal-foot"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" id="nc-go">Add client</button></div>');
+  $("#nc-go").onclick = () => {
+    const k = ($("#nc-key").value || "").trim();
+    if (!k) { toast("Client key is required", false); return; }
+    p.clients.push({ key: k, enabled: true, credOk: true, lastRead: "never", ctx: "cold", ctxAge: null, overrides: {} });
+    audit("Added client " + k + " to " + pk);
+    closeModal(); renderNav(); renderPlatformDetail(pk, "clients"); toast("Client " + k + " added");
+  };
+}
+
+/* ---------------- NEW PLATFORM WIZARD ---------------- */
+function newPlatformWizard(step, draft) {
+  draft = draft || { name: "", key: "", url: "", vault: "Portals", client: "", action: "" };
+  const dot = n => '<span style="width:7px;height:7px;border-radius:50%;background:' + (n <= step ? "var(--accent)" : "var(--border-strong)") + '"></span>';
+  const steps = '<div class="hstack" style="gap:6px;margin-bottom:4px">' + dot(1) + dot(2) + dot(3) + '<span class="xs muted" style="margin-left:6px">Step ' + step + ' of 3</span></div>';
+  let bodyInner = "";
+  if (step === 1) {
+    bodyInner =
+      '<label class="f">Platform display name</label><input type="text" id="w-name" value="' + esc(draft.name) + '" placeholder="LightReach / Palmetto">' +
+      '<label class="f">Platform key (used in useCase)</label><input type="text" id="w-key" value="' + esc(draft.key) + '" placeholder="lightreach">' +
+      '<label class="f">Base URL</label><input type="text" id="w-url" value="' + esc(draft.url) + '" placeholder="https://palmetto.finance/accounts">' +
+      '<label class="f">Vault</label><select id="w-vault">' + state.vaults.map(v => '<option' + (draft.vault === v.name ? " selected" : "") + '>' + v.name + '</option>').join("") + '</select>';
+  } else if (step === 2) {
+    bodyInner =
+      '<label class="f">First client key</label><input type="text" id="w-client" value="' + esc(draft.client) + '" placeholder="default">' +
+      '<label class="f">1Password item preview</label>' +
+      '<div class="mono" id="w-prev" style="padding:8px 11px;background:var(--surface-2);border-radius:var(--r-md)">op://' + draft.vault + '/' + (draft.key || "platform") + '.&lt;client&gt;</div>' +
+      '<div class="note accent">' + icon("info") + '<div>Add the login to this item in 1Password. The gateway reads it just in time on the first run.</div></div>';
+  } else {
+    bodyInner =
+      '<label class="f">First action key</label><input type="text" id="w-action" value="' + esc(draft.action) + '" placeholder="milestoneStatus">' +
+      '<div class="note warning">' + icon("alert") + '<div>First-live-run rule: a new action starts as a draft. It stays draft until one real job for ' + (draft.key || "the platform") + ' succeeds end to end, which locks the extract schema shape callers will depend on.</div></div>';
+  }
+  openModal(
+    '<div class="modal-head">' + steps + '<h2>New platform</h2></div>' +
+    '<div class="modal-body">' + bodyInner + '</div>' +
+    '<div class="modal-foot">' +
+    (step > 1 ? '<button class="btn" onclick="wizBack(' + step + ')">Back</button>' : '<button class="btn" onclick="closeModal()">Cancel</button>') +
+    '<span class="spacer"></span>' +
+    (step < 3 ? '<button class="btn btn-primary" onclick="wizNext(' + step + ')">Continue</button>'
+              : '<button class="btn btn-primary" onclick="wizFinish()">Create platform</button>') +
+    '</div>');
+  window._wizDraft = draft;
+  if (step === 2) { const c = $("#w-client"); c.addEventListener("input", () => { $("#w-prev").textContent = "op://" + draft.vault + "/" + draft.key + "." + (c.value || "<client>"); }); }
+}
+function wizCollect(step) {
+  const d = window._wizDraft;
+  if (step === 1) { d.name = $("#w-name").value.trim(); d.key = $("#w-key").value.trim(); d.url = $("#w-url").value.trim(); d.vault = $("#w-vault").value; }
+  if (step === 2) { d.client = $("#w-client").value.trim(); }
+  if (step === 3) { d.action = $("#w-action").value.trim(); }
+  return d;
+}
+function wizNext(step) {
+  const d = wizCollect(step);
+  if (step === 1 && (!d.name || !d.key)) { toast("Name and key are required", false); return; }
+  if (step === 2 && !d.client) { toast("A first client is required", false); return; }
+  newPlatformWizard(step + 1, d);
+}
+function wizBack(step) { const d = wizCollect(step); newPlatformWizard(step - 1, d); }
+function wizFinish() {
+  const d = wizCollect(3);
+  if (!d.action) { toast("A first action is required", false); return; }
+  plat(d.key) || state.platforms.push({
+    key: d.key, name: d.name, vault: d.vault, url: d.url,
+    actions: [{ key: d.action, risk: "read-only", enabled: false, status: "draft", variants: [], timeout: 180, attempts: 2, input: "", extract: "", goal: "", runs: 0, success: 0 }],
+    clients: [{ key: d.client, enabled: true, credOk: true, lastRead: "never", ctx: "cold", ctxAge: null, overrides: {} }]
+  });
+  audit("Created platform " + d.key + " with client " + d.client + " and draft action " + d.action);
+  closeModal(); renderNav(); go("#/catalogue/" + d.key); toast("Platform " + d.key + " created");
+}
+
+/* ---------------- ACTION EDITOR ---------------- */
+function openActionEditor(pk, ak) {
+  const p = plat(pk);
+  const isNew = ak === null;
+  const a = isNew ? { key: "", risk: "read-only", variants: [], timeout: 180, attempts: 2, input: "", extract: "", goal: "", status: "draft", enabled: false } : p.actions.find(x => x.key === ak);
+  if (!a) return;
+  const goalChips = (a.goal.match(/\{(\w+)\}/g) || []).map(m => '<span class="tag tag-accent">' + m + '</span>').join(" ");
+  const head = '<div class="drawer-title">' + icon("edit", "ic-lg") + '<div><h2>' + (isNew ? "New action on " + pk : pk + "." + a.key) + '</h2>' +
+    (isNew ? '<div class="xs muted">starts as a draft</div>' : '<div class="xs muted">' + (a.status === "live" ? "live" : "draft") + ' · ' + a.runs + ' runs 7d</div>') + '</div></div>';
+
+  const ovRows = !isNew ? p.clients.map(c => {
+    const has = c.overrides[a.key];
+    const parts = has ? [has.labels && "label map", has.url && "custom URL", has.hints && "goal hints", has.timeout && "timeout"].filter(Boolean) : [];
+    return '<div class="tgl-row"><div><div class="t1"><span class="tag tag-mono">' + c.key + '</span> ' +
+      (has ? '<span class="tag tag-accent">override</span>' : '<span class="tag tag-none">base</span>') + '</div>' +
+      '<div class="t2">' + (has ? parts.join(", ") : "uses the base definition") + '</div></div>' +
+      '<button class="btn btn-sm btn-ghost" onclick="closeDrawer();openOverrideEditor(\'' + pk + '\',\'' + c.key + '\',\'' + a.key + '\')">' + (has ? "Edit" : "Add") + ' override</button></div>';
+  }).join("") : "";
+
+  const body =
+    '<label class="f">Action key</label><input type="text" id="a-key" value="' + esc(a.key) + '" placeholder="milestoneStatus">' +
+    '<label class="f">Variants (enum the caller picks via input, comma separated)</label>' +
+    '<input type="text" id="a-var" value="' + esc(a.variants.join(", ")) + '" placeholder="NTP, PTO, Install, Permit">' +
+    (a.variants.length ? '<div class="wrap-chips" style="margin-top:8px">' + a.variants.map(v => '<span class="tag">' + v + '</span>').join("") + '</div>' : '') +
+    '<label class="f">Input schema (zod)</label><textarea id="a-in">' + esc(a.input) + '</textarea>' +
+    '<label class="f">Goal template ({field} interpolated from input)</label><textarea id="a-goal">' + esc(a.goal) + '</textarea>' +
+    (goalChips ? '<div class="wrap-chips" style="margin-top:8px"><span class="xs muted">fields:</span>' + goalChips + '</div>' : '') +
+    '<label class="f">' + icon("lock") + ' Extract schema (LOCKED)</label>' +
+    '<textarea id="a-ex" class="locked" readonly>' + esc(a.extract) + '</textarea>' +
+    '<div class="note">' + icon("lock") + '<div>The extract schema is locked at the action level. Clients cannot override it, so every caller receives one consistent output shape.</div></div>' +
+    '<div class="field-row">' +
+    '<div><label class="f">Timeout (s)</label><input type="number" id="a-to" value="' + a.timeout + '"></div>' +
+    '<div><label class="f">Max attempts</label><input type="number" id="a-at" value="' + a.attempts + '"></div>' +
+    '<div><label class="f">Risk</label><select id="a-risk"><option' + (a.risk === "read-only" ? " selected" : "") + '>read-only</option><option' + (a.risk !== "read-only" ? " selected" : "") + '>form-submit (approval flow)</option></select></div>' +
+    '</div>' +
+    (!isNew ? '<div class="section-head"><h2>Per-client overrides</h2></div>' + ovRows +
+      '<div class="note">' + icon("info") + '<div>If a client changes the data shape itself, do not override; create a separate action. Overrides are for navigation differences only.</div></div>' : '');
+
+  const foot = '<button class="btn btn-primary" onclick="saveAction(\'' + pk + '\',' + (isNew ? "null" : "'" + a.key + "'") + ')">Save action</button>' +
+    (!isNew ? '<button class="btn btn-ghost" onclick="testAction(\'' + pk + '\',\'' + a.key + '\')">' + icon("play") + 'Test</button>' : '') +
+    '<span class="spacer"></span>' +
+    (!isNew ? '<button class="btn btn-danger" onclick="deleteAction(\'' + pk + '\',\'' + a.key + '\')">' + icon("trash") + 'Delete</button>' : '<button class="btn btn-ghost" onclick="closeDrawer()">Cancel</button>');
+  openDrawer(head, body, foot);
+}
+function saveAction(pk, ak) {
+  const p = plat(pk);
+  const isNew = ak === null;
+  const existing = isNew ? null : p.actions.find(x => x.key === ak);
+  const key = $("#a-key").value.trim();
+  if (!key) { toast("Action key is required", false); return; }
+  const obj = {
+    key: key,
+    variants: $("#a-var").value.split(",").map(s => s.trim()).filter(Boolean),
+    input: $("#a-in").value, goal: $("#a-goal").value, extract: $("#a-ex").value,
+    timeout: +$("#a-to").value || 180, attempts: +$("#a-at").value || 2,
+    risk: $("#a-risk").value.startsWith("read") ? "read-only" : "form-submit",
+    status: existing ? existing.status : "draft",
+    enabled: existing ? existing.enabled : false,
+    runs: existing ? existing.runs : 0, success: existing ? existing.success : 0
+  };
+  if (existing) { Object.assign(existing, obj); } else { p.actions.push(obj); }
+  audit((isNew ? "Created" : "Edited") + " action " + pk + "." + key);
+  closeDrawer(); renderPlatformDetail(pk, "actions"); toast("Action saved" + (isNew ? " as draft" : ""));
+}
+function deleteAction(pk, ak) {
+  confirmModal("Delete " + pk + "." + ak + "?", "Callers get a 404 for this action immediately. This cannot be undone.", "Delete action", () => {
+    const p = plat(pk); p.actions = p.actions.filter(x => x.key !== ak);
+    audit("Deleted action " + pk + "." + ak);
+    closeDrawer(); renderPlatformDetail(pk, "actions"); toast("Action deleted");
+  }, true);
+}
+
+/* ---------------- OVERRIDE EDITOR + DIFF ---------------- */
+function openOverrideEditor(pk, ck, ak) {
+  const p = plat(pk);
+  const c = p.clients.find(x => x.key === ck);
+  const a = p.actions.find(x => x.key === ak) || { goal: "", timeout: 180 };
+  const o = c.overrides[ak] || { labels: "", hints: "", url: "", timeout: null };
+  const head = '<div class="drawer-title">' + icon("edit", "ic-lg") + '<div><h2>Override</h2><div class="xs muted mono">' + pk + '.' + ak + ' · ' + ck + '</div></div></div>';
+  const body =
+    '<p class="txt2 sm">Only navigation may differ per client. Input and extract schemas stay identical, so callers never learn which brand the agent logged into.</p>' +
+    '<label class="f">Custom start URL (blank = base)</label><input type="text" id="o-url" value="' + esc(o.url || "") + '" placeholder="' + p.url + '" oninput="renderDiff(\'' + pk + '\',\'' + ck + '\',\'' + ak + '\')">' +
+    '<label class="f">Label map (base label -> this client label, one per line)</label>' +
+    '<textarea id="o-labels" placeholder="NTP Date -> Notice to Proceed Date" oninput="renderDiff(\'' + pk + '\',\'' + ck + '\',\'' + ak + '\')">' + esc(o.labels || "") + '</textarea>' +
+    '<label class="f">Goal hints (appended to the base goal)</label>' +
+    '<textarea id="o-hints" placeholder="Status fields live in the right-hand summary rail." oninput="renderDiff(\'' + pk + '\',\'' + ck + '\',\'' + ak + '\')">' + esc(o.hints || "") + '</textarea>' +
+    '<label class="f">Timeout override (blank = base ' + a.timeout + 's)</label><input type="number" id="o-to" value="' + (o.timeout || "") + '" oninput="renderDiff(\'' + pk + '\',\'' + ck + '\',\'' + ak + '\')">' +
+    '<div class="section-head"><h2>Effective config</h2><span class="xs muted">base vs merged</span></div>' +
+    '<div id="diff-block"></div>' +
+    '<div class="note">' + icon("info") + '<div>Layout completely different for this brand? If the label map cannot bridge it, the honest move is a separate action (for example ' + ak + 'V2) with its own goal, and this client pinned to it.</div></div>';
+  const foot = '<button class="btn btn-primary" onclick="saveOverride(\'' + pk + '\',\'' + ck + '\',\'' + ak + '\')">Save override</button>' +
+    '<button class="btn btn-ghost" onclick="testActionAs(\'' + pk + '\',\'' + ak + '\',\'' + ck + '\')">' + icon("play") + 'Test as ' + ck + '</button>' +
+    '<span class="spacer"></span>' +
+    (c.overrides[ak] ? '<button class="btn btn-danger" onclick="removeOverride(\'' + pk + '\',\'' + ck + '\',\'' + ak + '\')">Remove</button>' : '');
+  openDrawer(head, body, foot);
+  renderDiff(pk, ck, ak);
+}
+function renderDiff(pk, ck, ak) {
+  const p = plat(pk);
+  const a = p.actions.find(x => x.key === ak) || { goal: "", timeout: 180, url: p.url };
+  const url = ($("#o-url") && $("#o-url").value) || "";
+  const labels = ($("#o-labels") && $("#o-labels").value) || "";
+  const hints = ($("#o-hints") && $("#o-hints").value) || "";
+  const to = ($("#o-to") && $("#o-to").value) || "";
+  const base = [
+    { label: "startUrl", v: p.url },
+    { label: "goal", v: a.goal },
+    { label: "labelMap", v: "(none)" },
+    { label: "timeout", v: a.timeout + "s" }
+  ];
+  const merged = [
+    { label: "startUrl", v: url || p.url, changed: !!url },
+    { label: "goal", v: a.goal + (hints ? " " + hints : ""), changed: !!hints },
+    { label: "labelMap", v: labels ? labels.split("\n").filter(Boolean).length + " mapping(s)" : "(none)", changed: !!labels },
+    { label: "timeout", v: (to || a.timeout) + "s", changed: !!to }
+  ];
+  let html = '<div class="diff">';
+  merged.forEach((m, i) => {
+    if (m.changed) {
+      html += '<div class="diff-line del"><span class="gutter">-</span><span>' + esc(base[i].label + ": " + base[i].v) + '</span></div>';
+      html += '<div class="diff-line add"><span class="gutter">+</span><span>' + esc(m.label + ": " + m.v) + '</span></div>';
+    } else {
+      html += '<div class="diff-line"><span class="gutter"> </span><span>' + esc(m.label + ": " + m.v) + '</span></div>';
+    }
+  });
+  html += '</div>';
+  const block = $("#diff-block");
+  if (block) block.innerHTML = html;
+}
+function saveOverride(pk, ck, ak) {
+  const c = plat(pk).clients.find(x => x.key === ck);
+  const o = { url: $("#o-url").value.trim(), labels: $("#o-labels").value, hints: $("#o-hints").value.trim(), timeout: $("#o-to").value ? +$("#o-to").value : null };
+  if (!o.url && !o.labels.trim() && !o.hints && !o.timeout) { toast("Nothing to save; override is empty", false); return; }
+  c.overrides[ak] = o;
+  audit("Saved override on " + pk + "." + ak + " for client " + ck);
+  closeDrawer(); renderPlatformDetail(pk, "clients"); toast("Override saved for " + ck);
+}
+function removeOverride(pk, ck, ak) {
+  confirmModal("Remove override?", "<strong>" + ck + "</strong> goes back to the base definition of " + ak + ".", "Remove", () => {
+    delete plat(pk).clients.find(x => x.key === ck).overrides[ak];
+    audit("Removed override on " + pk + "." + ak + " for " + ck);
+    closeDrawer(); renderPlatformDetail(pk, "clients"); toast("Override removed");
+  }, true);
+}
+
+/* ---------------- TEST RUN SIMULATION ---------------- */
+function testAction(pk, ak) { testActionAs(pk, ak, plat(pk).clients[0].key); }
+function testActionAs(pk, ak, ck) {
+  const p = plat(pk);
+  const a = p.actions.find(x => x.key === ak) || { variants: [] };
+  openModal(
+    '<div class="modal-head"><h2>Test run · ' + pk + '.' + ak + '</h2></div>' +
+    '<div class="modal-body"><label class="f">Run as client</label>' +
+    '<select id="t-client">' + p.clients.map(c => '<option' + (c.key === ck ? " selected" : "") + '>' + c.key + '</option>').join("") + '</select>' +
+    (a.variants.length ? '<label class="f">Variant</label><select id="t-var">' + a.variants.map(v => '<option>' + v + '</option>').join("") + '</select>' : '') +
+    '<label class="f">Test input (JSON)</label><textarea id="t-in">{ "name": "Jane Q. Homeowner", "address": "123 Solar Way, Austin TX 78701" }</textarea>' +
+    '<div id="t-out" style="margin-top:12px"></div></div>' +
+    '<div class="modal-foot"><button class="btn" onclick="closeModal()">Close</button><button class="btn btn-primary" id="t-go">' + icon("play") + 'Start test run</button></div>');
+  $("#t-go").onclick = () => {
+    const cl = $("#t-client").value;
+    const c = p.clients.find(x => x.key === cl);
+    const ov = c && c.overrides[ak];
+    const out = $("#t-out");
+    const btn = $("#t-go"); btn.disabled = true;
+    out.innerHTML = '<pre>queued (test, not counted in stats)\nresolving ' + pk + '.' + ak + ' ' + (ov ? "+ override for " + cl : "(base definition)") + '\nreading op://' + p.vault + '/' + pk + '.' + cl + ' ...</pre>';
+    setTimeout(() => {
+      if (c && !c.credOk) {
+        out.innerHTML += '<pre>login FAILED: ' + c.lastErr + '\nstatus: error. Fix the credential in 1Password first.</pre>';
+        toast("Test failed: " + c.lastErr, false);
+      } else {
+        out.innerHTML += '<pre>login ok (secrets redacted)\n' + (ov && ov.labels ? "label map applied: " + ov.labels.split("\\n").filter(Boolean).length + " mapping(s)\n" : "") +
+          'executing goal ... ok\n\n{ "status": "success", "meta": { "sessionReplayUrl": "https://browserbase.com/sessions/bb_test_91" } }</pre>';
+        toast("Test run finished: success");
+      }
+      btn.disabled = false;
+      audit("Ran test for " + pk + "." + ak + " as " + cl);
+    }, 1300);
+  };
+}
+/* ---------------- SECRETS ---------------- */
+function renderSecrets(params) {
+  const tab = (params && params.tab) || state.ui.secretsTab || "credentials";
+  state.ui.secretsTab = tab;
+  const tabBtn = (id, label) => '<button class="' + (tab === id ? "on" : "") + '" onclick="setSecretsTab(\'' + id + '\')">' + label + '</button>';
+  let content = tab === "credentials" ? secretsCreds() : secretsVaults();
+  view().innerHTML =
+    '<div class="page-head"><div><h1>Secrets</h1>' +
+    '<div class="sub">One vault per domain, one scoped service account per vault. Client logins live inside as items named platform.client. Values are never displayed.</div></div></div>' +
+    '<div class="tabset" style="margin-bottom:18px">' + tabBtn("credentials", "Credentials") + tabBtn("vaults", "Vaults") + '</div>' + content;
+}
+function setSecretsTab(t) { state.ui.secretsTab = t; renderSecrets(); }
+function secretsCreds() {
+  return state.platforms.map(p =>
+    '<div class="section-head"><h2>' + p.name + '</h2><div class="hstack"><span class="tag">' + p.clients.length + ' logins</span><span class="tag">vault: ' + p.vault + '</span></div></div>' +
+    '<div class="tbl-wrap" style="margin-bottom:8px"><div class="tbl-scroll"><table><thead><tr>' +
+    '<th>Client</th><th>op:// item</th><th>Fields</th><th>Last op read</th><th>Health</th><th>Context</th><th></th></tr></thead><tbody>' +
+    p.clients.map((c, i) => {
+      const totp = (p.key === "lightreach" || p.key === "govnet") ? ", TOTP" : "";
+      const affected = !c.credOk ? jobsForClient(p.key, c.key).filter(j => j.status === "error").length : 0;
+      return '<tr><td><span class="tag tag-mono">' + c.key + '</span></td>' +
+        '<td class="mono xs">op://' + p.vault + '/' + p.key + '.' + c.key + '</td>' +
+        '<td class="sm txt2">username, password' + totp + '</td>' +
+        '<td class="sm txt2">' + c.lastRead + '</td>' +
+        '<td>' + (c.credOk ? pill("healthy", "healthy") :
+          pill("bad", c.lastErr) + (affected ? ' <a class="xs" style="color:var(--accent);cursor:pointer" onclick="go(\'#/jobs?client=' + c.key + '&outcome=error\')">' + affected + ' jobs affected</a>' : '')) + '</td>' +
+        '<td>' + ctxChip(c.ctx) + (c.ctxAge ? ' <span class="xs muted">' + c.ctxAge + '</span>' : '') + '</td>' +
+        '<td class="nowrap"><button class="btn btn-sm btn-ghost" onclick="testLogin(\'' + p.key + '\',' + i + ')">' + icon("play") + 'Test</button> ' +
+        '<button class="btn btn-sm btn-ghost" onclick="warmCtx(\'' + p.key + '\',' + i + ')">' + icon("zap") + 'Warm</button> ' +
+        '<button class="btn btn-sm btn-ghost" onclick="toast(\'Would deep-link to this item in 1Password\')">' + icon("external") + '1PW</button></td></tr>';
+    }).join("") + '</tbody></table></div></div>'
+  ).join("") +
+  '<div class="note warning">' + icon("alert") + '<div>A red row means every job for that platform and client pair returns AUTH errors until the credential is fixed in 1Password. Rotation needs no deploy; the next run picks it up.</div></div>';
+}
+function secretsVaults() {
+  return '<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr))">' +
+    state.vaults.map((v, i) => {
+      const oldTok = v.tokenAge > 90;
+      return '<div class="card"><div class="card-head"><div class="hstack">' + icon("secrets") + '<h3 style="text-transform:none;letter-spacing:0;font-size:14px;color:var(--text)">' + v.name + '</h3></div>' +
+        (v.warn || oldTok ? '<span class="tag tag-warning">rotate recommended</span>' : pill("healthy", "healthy")) + '</div>' +
+        '<div class="kv"><span class="k">Login items</span><span class="v">' + v.items + ' <span class="muted">(platform.client)</span></span>' +
+        '<span class="k">Service account</span><span class="v mono xs">' + v.sa + '</span></div>' +
+        '<label class="f">Token age</label><div class="hstack"><span class="' + (oldTok ? "v-warn" : "") + '" style="font-weight:600">' + v.tokenAge + ' days</span>' + (oldTok ? '<span class="xs muted">policy limit 90d</span>' : '') + '</div>' +
+        '<div class="meter ' + (oldTok ? "warn" : "ok") + '"><div style="width:' + Math.min(100, Math.round(v.tokenAge / 90 * 100)) + '%"></div></div>' +
+        '<label class="f">Rate budget used (this hour)</label><div style="font-weight:600">' + v.rate + '%</div>' +
+        '<div class="meter"><div style="width:' + v.rate + '%"></div></div>' +
+        '<div class="toolbar" style="margin:14px 0 0"><button class="btn btn-sm" onclick="rotateToken(' + i + ')">' + icon("refresh") + 'Rotate token</button>' +
+        '<button class="btn btn-sm btn-ghost" onclick="toast(\'Would list item names only, never values\')">View items</button></div></div>';
+    }).join("") + '</div>';
+}
+function testLogin(pk, i) {
+  const c = plat(pk).clients[i];
+  toast("Testing login: " + pk + " / " + c.key + " ...");
+  setTimeout(() => {
+    if (!c.credOk) toast(pk + "/" + c.key + " FAILED: " + c.lastErr + ". Rotate in 1Password.", false);
+    else toast(pk + "/" + c.key + " login ok (replay saved)");
+    audit("Ran login test for " + pk + " / " + c.key);
+  }, 1000);
+}
+function warmCtx(pk, i) {
+  const c = plat(pk).clients[i];
+  if (!c.credOk) { toast("Cannot warm " + c.key + ": credential is failing", false); return; }
+  c.ctx = "warm"; c.ctxAge = "0m";
+  audit("Re-warmed context for " + pk + " / " + c.key);
+  renderSecrets(); toast(pk + "/" + c.key + " context warmed");
+}
+function rotateToken(i) {
+  const v = state.vaults[i];
+  confirmModal("Rotate token for " + v.name + "?",
+    "A new service account token is issued and the old one revoked after a 10 minute grace window. Update the gateway env before the window closes.",
+    "Rotate token", () => {
+      v.tokenAge = 0; v.warn = false;
+      audit("Rotated service account token for vault " + v.name);
+      renderNav(); renderSecrets(); toast("Token rotated. Grace window: 10 min.");
+    });
+}
+
+/* ---------------- ACCESS ---------------- */
+function renderAccess() {
+  view().innerHTML =
+    '<div class="page-head"><div><h1>Access</h1>' +
+    '<div class="sub">Scopes are useCase x client: an app may run an action for some brands and not others.</div></div>' +
+    '<button class="btn btn-primary" onclick="issueToken()">' + icon("plus") + 'Issue caller token</button></div>' +
+    '<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(420px,1fr))">' +
+    state.callers.map((c, i) =>
+      '<div class="card"><div class="card-head"><div class="hstack">' + icon("key") + '<h3 style="text-transform:none;letter-spacing:0;font-size:14px;color:var(--text)">' + c.name + '</h3></div>' +
+      (c.active ? pill("healthy", "active") : pill("bad", "revoked")) + '</div>' +
+      '<div class="kv"><span class="k">Token</span><span class="v mono">' + c.token + '</span>' +
+      '<span class="k">Issued</span><span class="v sm">' + c.created + '</span>' +
+      '<span class="k">Rate limit</span><span class="v sm">' + c.rate + ' jobs / min</span>' +
+      '<span class="k">Runs (7d)</span><span class="v sm">' + c.runs + '</span></div>' +
+      '<label class="f">Scopes (useCase x clients, * = all)</label>' +
+      c.scopes.map((s, si) =>
+        '<div class="field-row" style="margin-bottom:6px;align-items:center"><span class="mono xs" style="flex:2;min-width:160px">' + s.uc + '</span>' +
+        '<input type="text" value="' + esc(s.clients) + '" style="flex:1;min-width:90px" onchange="updateScope(' + i + ',' + si + ',this.value)">' +
+        '<button class="btn btn-sm btn-ghost" style="flex:0" onclick="removeScope(' + i + ',' + si + ')">' + icon("trash") + '</button></div>'
+      ).join("") +
+      '<div class="toolbar" style="margin:10px 0 0"><button class="btn btn-sm btn-ghost" onclick="addScope(' + i + ')">' + icon("plus") + 'Add scope</button>' +
+      (c.active ? '<button class="btn btn-sm btn-danger" onclick="revokeCaller(' + i + ')">Revoke token</button>' : '') + '</div></div>'
+    ).join("") + '</div>' +
+    '<div class="section-head"><h2>Endpoints</h2></div>' +
+    '<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr))">' +
+    [["GET", "/health", "Liveness, version, session usage"],
+     ["GET", "/catalogue", "Enabled useCases the token may call"],
+     ["POST", "/jobs", "Submit a job, returns the envelope"],
+     ["GET", "/jobs/:id", "Poll a job by id"]].map(e =>
+      '<div class="card" style="padding:14px 16px"><div class="hstack"><span class="tag ' + (e[0] === "POST" ? "tag-accent" : "tag-info") + '">' + e[0] + '</span><span class="mono sm">' + e[1] + '</span></div>' +
+      '<div class="xs muted" style="margin-top:8px">' + e[2] + '</div></div>').join("") + '</div>' +
+    '<div class="section-head"><h2>Envelope reference</h2><button class="btn btn-sm btn-ghost" id="copy-sample">' + icon("copy") + 'Copy</button></div>' +
+    '<pre>' + esc(sampleEnvelope()) + '</pre>';
+  const csample = $("#copy-sample"); if (csample) csample.onclick = () => copyText(sampleEnvelope(), "Sample");
+}
+function sampleEnvelope() {
+  return 'POST /jobs\n{ "useCase": "lightreach.milestoneStatus", "client": "lgcyco",\n  "input": { "name": "Jane Q. Homeowner", "address": "123 Solar Way, Austin TX", "milestone": "NTP" } }\n\n200 OK\n{\n  "status": "success",\n  "data": { "milestone": "NTP", "value": "2026-06-30", "matchVerified": true },\n  "error": null,\n  "meta": {\n    "jobId": "j_66e19",\n    "sessionId": "bb_sess_66e19",\n    "sessionReplayUrl": "https://browserbase.com/sessions/bb_sess_66e19",\n    "credentialItem": "op://Portals/lightreach.lgcyco",\n    "durationMs": 39000,\n    "attempts": 1\n  }\n}';
+}
+function updateScope(i, si, val) { state.callers[i].scopes[si].clients = val; audit("Changed client scope on " + state.callers[i].scopes[si].uc + " for " + state.callers[i].name); toast("Scope updated"); }
+function removeScope(i, si) {
+  const c = state.callers[i]; const uc = c.scopes[si].uc;
+  c.scopes.splice(si, 1); audit("Removed scope " + uc + " from " + c.name); renderAccess(); toast("Scope removed");
+}
+function addScope(i) {
+  const ucs = state.platforms.flatMap(p => p.actions.map(a => p.key + "." + a.key));
+  openModal(
+    '<div class="modal-head"><h2>Add scope to ' + state.callers[i].name + '</h2></div>' +
+    '<div class="modal-body"><label class="f">Use case</label><select id="s-uc">' + ucs.map(u => '<option>' + u + '</option>').join("") + '</select>' +
+    '<label class="f">Clients (comma separated, * = all)</label><input type="text" id="s-cl" value="*"></div>' +
+    '<div class="modal-foot"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" id="s-go">Add scope</button></div>');
+  $("#s-go").onclick = () => {
+    state.callers[i].scopes.push({ uc: $("#s-uc").value, clients: $("#s-cl").value || "*" });
+    audit("Granted scope " + $("#s-uc").value + " (" + $("#s-cl").value + ") to " + state.callers[i].name);
+    closeModal(); renderAccess(); toast("Scope added");
+  };
+}
+function revokeCaller(i) {
+  const c = state.callers[i];
+  confirmModal("Revoke " + c.name + "?", "Every request with this token gets 401 immediately. Running jobs finish.", "Revoke token", () => {
+    c.active = false; audit("Revoked caller token " + c.name); renderAccess(); toast("Token revoked");
+  }, true);
+}
+function issueToken() {
+  openModal(
+    '<div class="modal-head"><h2>Issue caller token</h2></div>' +
+    '<div class="modal-body"><label class="f">App name</label><input type="text" id="nt-name" placeholder="billing-service">' +
+    '<label class="f">Rate limit (jobs / min)</label><input type="number" id="nt-rate" value="30"></div>' +
+    '<div class="modal-foot"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" id="nt-go">Issue token</button></div>');
+  $("#nt-go").onclick = () => {
+    const name = ($("#nt-name").value || "").trim() || "unnamed-app";
+    const tok = "gw_live_" + Math.random().toString(36).slice(2, 14) + Math.random().toString(36).slice(2, 6);
+    state.callers.push({ name: name, token: "gw_live_...." + tok.slice(-4), created: "2026-07-11", scopes: [], rate: +$("#nt-rate").value || 30, runs: 0, active: true });
+    audit("Issued caller token for " + name);
+    renderNav();
+    openModal(
+      '<div class="modal-head"><h2>Token issued</h2></div>' +
+      '<div class="modal-body"><p class="txt2 sm">Shown once. Store it in 1Password now. Scopes are empty until you grant useCase x client pairs.</p>' +
+      '<div class="code-block"><pre>' + tok + '</pre></div>' +
+      '<button class="btn btn-sm btn-ghost" id="copy-token">' + icon("copy") + 'Copy token</button></div>' +
+      '<div class="modal-foot"><button class="btn btn-primary" onclick="closeModal();renderAccess()">Done</button></div>');
+    const ct = $("#copy-token"); if (ct) ct.onclick = () => copyText(tok, "Token");
+  };
+}
+/* ---------------- CANARIES & ALERTS ---------------- */
+function renderCanaries() {
+  const r = state.alertRules;
+  const canOutcome = c => c.last === "success" ? outcomePill("success", "success " + c.ago) : outcomePill(c.last, c.last + " " + c.ago);
+  view().innerHTML =
+    '<div class="page-head"><div><h1>Canaries & Alerts</h1>' +
+    '<div class="sub">Canaries run per platform and client pair, because each brand can have its own layout and its own way of breaking.</div></div>' +
+    '<button class="btn btn-primary" onclick="runAllCanaries()">' + icon("refresh") + 'Run all</button></div>' +
+
+    '<div class="section-head"><h2>Canary matrix</h2></div>' +
+    '<div class="tbl-wrap"><div class="tbl-scroll"><table><thead><tr>' +
+    '<th>Platform / client</th><th>Schedule</th><th>Last run</th><th>Drift</th><th>History</th><th>On</th><th></th></tr></thead><tbody>' +
+    state.canaries.map((c, i) =>
+      '<tr><td class="mono">' + c.p + ' / ' + c.c + '</td>' +
+      '<td class="sm txt2">' + c.schedule + '</td>' +
+      '<td>' + canOutcome(c) + '</td>' +
+      '<td>' + (c.drift ? '<span class="tag tag-warning">' + icon("alert") + 'label fallback used</span>' : '<span class="muted xs">none</span>') + '</td>' +
+      '<td><span class="spark">' + c.hist.map(h => '<i class="' + (h === "ok" ? "ok" : h === "fail" ? "fail" : "err") + '"></i>').join("") + '</span></td>' +
+      '<td><button class="tgl" role="switch" aria-checked="' + c.on + '" aria-label="Toggle canary" data-toggle></button></td>' +
+      '<td class="nowrap"><button class="btn btn-sm btn-ghost" onclick="runCanary(' + i + ')">' + icon("play") + 'Run now</button></td></tr>'
+    ).join("") + '</tbody></table></div></div>' +
+    '<div class="note">' + icon("info") + '<div>Canary outcome is independent of credential health. A canary can be red because of layout drift even while the login is fine.</div></div>' +
+
+    '<div class="grid" style="grid-template-columns:1fr 1fr;margin-top:8px">' +
+    '<div class="card"><div class="card-head"><h3>Alert rules</h3></div>' +
+    '<div class="tgl-row"><div><div class="t1">Error-rate alert</div><div class="t2">Any platform and client pair above threshold in a 1h window</div></div><button class="tgl" role="switch" aria-checked="' + r.errorRate.on + '" data-toggle onclick="state.alertRules.errorRate.on=this.getAttribute(\'aria-checked\')===\'true\'"></button></div>' +
+    '<label class="f">Error-rate threshold (%)</label><input type="number" value="' + r.errorRate.threshold + '" onchange="state.alertRules.errorRate.threshold=+this.value">' +
+    '<div class="tgl-row" style="margin-top:8px"><div><div class="t1">Credential failure alert</div><div class="t2">Immediate on AUTH_REQUIRED or LOGIN_FAILED</div></div><button class="tgl" role="switch" aria-checked="' + r.credFail.on + '" data-toggle onclick="state.alertRules.credFail.on=this.getAttribute(\'aria-checked\')===\'true\'"></button></div>' +
+    '<div class="tgl-row"><div><div class="t1">Layout drift alert</div><div class="t2">Canary passed but needed extra steps or a label fallback</div></div><button class="tgl" role="switch" aria-checked="' + r.drift.on + '" data-toggle onclick="state.alertRules.drift.on=this.getAttribute(\'aria-checked\')===\'true\'"></button></div>' +
+    '<div class="tgl-row"><div><div class="t1">Rate-limit alert</div><div class="t2">Any service account above budget</div></div><button class="tgl" role="switch" aria-checked="' + r.rateLimit.on + '" data-toggle onclick="state.alertRules.rateLimit.on=this.getAttribute(\'aria-checked\')===\'true\'"></button></div>' +
+    '<label class="f">Slack webhook</label><input type="text" value="' + esc(r.webhook) + '" onchange="state.alertRules.webhook=this.value">' +
+    '<div class="toolbar" style="margin:14px 0 0"><button class="btn btn-primary btn-sm" onclick="audit(\'Updated alert rules\');toast(\'Alert rules saved\')">Save alerts</button></div></div>' +
+
+    '<div class="card"><div class="card-head"><h3>Alert inbox</h3><span class="tag">' + state.alertInbox.length + ' recent</span></div>' +
+    '<div class="run-strip" id="inbox-list">' + inboxRows() + '</div></div>' +
+    '</div>';
+}
+function inboxRows() {
+  return state.alertInbox.map(a =>
+    '<button class="att sev-' + a.sev + '" style="box-shadow:none" onclick="go(\'#/canaries\')"><span class="att-ic">' + icon(a.sev === "danger" ? "key" : "alert") + '</span>' +
+    '<span class="att-body"><span class="t1">' + esc(a.title) + '</span><span class="t2">' + esc(a.body) + '</span></span>' +
+    '<span class="xs muted nowrap">' + a.at + '</span></button>').join("");
+}
+function runCanary(i) {
+  const c = state.canaries[i];
+  toast("Running canary " + c.p + " / " + c.c + " ...");
+  setTimeout(() => {
+    const cl = plat(c.p) && plat(c.p).clients.find(x => x.key === c.c);
+    if (cl && !cl.credOk) { c.last = "error"; c.ago = "just now"; c.hist = c.hist.slice(1).concat("err"); }
+    else { c.last = "success"; c.ago = "just now"; c.drift = false; c.hist = c.hist.slice(1).concat("ok"); }
+    audit("Ran canary now for " + c.p + " / " + c.c);
+    renderNav(); renderCanaries();
+    toast("Canary " + c.p + "/" + c.c + ": " + c.last);
+  }, 1000);
+}
+function runAllCanaries() {
+  toast("Queued a run for every canary");
+  setTimeout(() => {
+    state.canaries.forEach(c => {
+      const cl = plat(c.p) && plat(c.p).clients.find(x => x.key === c.c);
+      if (cl && !cl.credOk) { c.last = "error"; c.ago = "just now"; c.hist = c.hist.slice(1).concat("err"); }
+      else { c.last = "success"; c.ago = "just now"; c.drift = false; c.hist = c.hist.slice(1).concat("ok"); }
+    });
+    audit("Ran all canaries");
+    renderNav(); renderCanaries(); toast("All canaries finished");
+  }, 1200);
+}
+
+/* ---------------- AUDIT ---------------- */
+function renderAudit() {
+  view().innerHTML =
+    '<div class="page-head"><div><h1>Audit</h1>' +
+    '<div class="sub">Every admin action, immutable. Actions you take in this session are appended live.</div></div>' +
+    '<span class="tag">' + icon("lock") + 'append-only</span></div>' +
+    '<div class="tbl-wrap"><div class="tbl-scroll"><table id="audit-tbl"></table></div></div>';
+  drawAuditRows();
+}
+function drawAuditRows() {
+  const t = $("#audit-tbl");
+  if (!t) return;
+  t.innerHTML = '<thead><tr><th class="nowrap">When</th><th>Who</th><th>Action</th></tr></thead><tbody>' +
+    state.audit.map(a => '<tr><td class="nowrap sm txt2">' + a.at + '</td><td class="sm mono">' + a.who + '</td><td>' + esc(a.what) + '</td></tr>').join("") + '</tbody>';
+}
+
+/* ---------------- SETTINGS ---------------- */
+function renderSettings(params) {
+  const tab = (params && params.tab) || state.ui.settingsTab || "environment";
+  state.ui.settingsTab = tab;
+  const tabBtn = (id, label) => '<button class="' + (tab === id ? "on" : "") + '" onclick="setSettingsTab(\'' + id + '\')">' + label + '</button>';
+  let content = tab === "environment" ? settingsEnv() : tab === "runner" ? settingsRunner() : tab === "flags" ? settingsFlags() : settingsDanger();
+  view().innerHTML =
+    '<div class="page-head"><div><h1>Settings</h1><div class="sub">Deployment, runner policy, feature flags and destructive controls.</div></div></div>' +
+    '<div class="tabset" style="margin-bottom:18px">' + tabBtn("environment", "Environment") + tabBtn("runner", "Runner policy") + tabBtn("flags", "Feature flags") + tabBtn("danger", "Danger zone") + '</div>' + content;
+}
+function setSettingsTab(t) { state.ui.settingsTab = t; renderSettings(); }
+function settingsEnv() {
+  const rows = [
+    ["PORT", "8080"], ["GATEWAY_TOKEN", "set (bearer auth on)"],
+    ["OP_TOKEN (Portals)", "set, scoped: Portals"], ["OP_TOKEN (GovSites)", "set, scoped: GovSites"],
+    ["BROWSERBASE_API_KEY", "set"], ["BROWSERBASE_PROJECT_ID", "Gojobengine / Production"],
+    ["ANTHROPIC_API_KEY", "set"], ["PORTAL_* fallback", "disabled in PROD"]
+  ];
+  return '<div class="card" style="max-width:640px"><div class="card-head"><h3>Environment (read-only)</h3><span class="tag">via infra</span></div>' +
+    '<div class="kv" style="grid-template-columns:220px 1fr">' + rows.map(r => '<span class="k mono xs">' + r[0] + '</span><span class="v mono xs">' + r[1] + '</span>').join("") + '</div></div>';
+}
+function settingsRunner() {
+  const gate = (t1, t2, on, locked) => '<div class="tgl-row"><div><div class="t1">' + t1 + '</div><div class="t2">' + t2 + '</div></div>' +
+    '<button class="tgl" role="switch" aria-checked="' + on + '"' + (locked ? " disabled" : " data-toggle") + '></button></div>';
+  return '<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr))">' +
+    '<div class="card"><div class="card-head"><h3>Risk gates</h3></div>' +
+    gate("Auto-approve login steps", "Headless runs cannot ask a human to approve the login submit", true) +
+    gate("Block destructive actions", "Refuse clicks classified as delete, submit or save after login", true) +
+    gate("Require match verification", "Never extract from a record whose identity was not verified", true) +
+    gate("Serialize per credential", "Never run two sessions with the same platform and client login at once", true) + '</div>' +
+    '<div class="card"><div class="card-head"><h3>Execution limits</h3></div>' +
+    '<label class="f">Max agent steps per run</label><input type="number" value="40">' +
+    '<label class="f">Run timeout (seconds)</label><input type="number" value="180">' +
+    '<label class="f">Max attempts (auto-retry on error)</label><input type="number" value="2">' +
+    '<label class="f">Concurrent Browserbase sessions</label><input type="number" value="5"></div>' +
+    '<div class="card"><div class="card-head"><h3>Model & credentials</h3></div>' +
+    '<label class="f">Planner model</label><select><option>claude-sonnet (current)</option><option>claude-haiku (cheap runs)</option><option>claude-opus (hard portals)</option></select>' +
+    '<label class="f">Credential fast path</label><select><option>JIT op read only (current)</option><option>Context per client first, op read fallback</option></select>' +
+    '<label class="f">Secrets cache TTL (seconds)</label><input type="number" value="60">' +
+    gate("Redact secrets in logs", "Cannot be disabled", true, true) + '</div></div>' +
+    '<div class="toolbar" style="margin-top:16px"><button class="btn btn-primary" onclick="audit(\'Updated runner policy\');toast(\'Runner policy saved\')">Save policy</button>' +
+    '<button class="btn btn-ghost" onclick="toast(\'Reverted to saved values\')">Discard</button></div>';
+}
+function settingsFlags() {
+  return '<div class="card" style="max-width:680px"><div class="card-head"><h3>Feature flags</h3></div>' +
+    state.flags.map((f, i) => '<div class="tgl-row"><div><div class="t1">' + f.t1 + '</div><div class="t2">' + f.t2 + '</div></div>' +
+      '<button class="tgl" role="switch" data-toggle aria-checked="' + f.on + '" aria-label="' + f.t1 + '" onclick="toggleFlag(' + i + ',this)"></button></div>').join("") +
+    '<div class="toolbar" style="margin:16px 0 0"><button class="btn btn-primary btn-sm" onclick="saveFlags()">Save flags</button></div></div>';
+}
+function toggleFlag(i, el) { state.flags[i].on = el.getAttribute("aria-checked") === "true"; }
+function saveFlags() {
+  const on = state.flags.filter(f => f.on).map(f => f.key);
+  audit("Saved feature flags (" + on.length + " enabled)");
+  toast("Feature flags saved");
+}
+function settingsDanger() {
+  return '<div class="card" style="max-width:680px;border-color:var(--danger-soft)"><div class="card-head"><h3 style="color:var(--danger)">Danger zone</h3></div>' +
+    '<p class="txt2 sm" style="margin-bottom:14px">These act immediately on live traffic.</p>' +
+    '<div class="tgl-row"><div><div class="t1">Pause all new jobs</div><div class="t2">Running jobs finish. POST /jobs returns 503 until resumed.</div></div>' +
+    '<button class="btn btn-danger btn-sm" onclick="pauseJobs()">' + icon("pause") + 'Pause</button></div>' +
+    '<div class="tgl-row"><div><div class="t1">Kill running sessions</div><div class="t2">Both running Browserbase sessions are terminated and their jobs marked error.</div></div>' +
+    '<button class="btn btn-danger btn-sm" onclick="confirmKillSessions()">' + icon("power") + 'Kill</button></div>' +
+    '<div class="tgl-row"><div><div class="t1">Flush secrets cache</div><div class="t2">Next runs re-read from 1Password. Watch rate limits.</div></div>' +
+    '<button class="btn btn-danger btn-sm" onclick="flushCache()">' + icon("trash") + 'Flush</button></div></div>';
+}
+function pauseJobs() {
+  confirmModal("Pause all new jobs?", "Running jobs finish. POST /jobs returns 503 until resumed.", "Pause jobs", () => {
+    audit("Paused all new jobs"); toast("Gateway paused");
+  }, true);
+}
+function flushCache() {
+  confirmModal("Flush secrets cache?", "Next runs re-read from 1Password. Watch rate limits.", "Flush cache", () => {
+    audit("Flushed secrets cache"); toast("Secrets cache flushed");
+  }, true);
+}
+function confirmKillSessions() {
+  confirmModal("Kill running sessions?", "Both running Browserbase sessions will be terminated and their jobs marked as error.", "Kill sessions", () => {
+    killSessions();
+  }, true);
+}
+function killSessions() {
+  runningJobs().forEach(j => { j.state = "DONE"; j.status = "error"; j.err = { code: "CANCELLED", message: "Session killed by admin" }; j.stuck = false; });
+  audit("Killed all running sessions");
+  renderNav(); toast("Running sessions killed");
+}
+
+/* ---------------- DOCS ---------------- */
+function renderDocs() {
+  const steps = [
+    ["Submit", "Caller POSTs { useCase, client, input } with a bearer token"],
+    ["Authorize", "Token is checked against the useCase x client scope"],
+    ["Resolve", "useCase maps to a platform action definition"],
+    ["Validate", "Input is validated against the zod schema"],
+    ["Merge override", "Client navigation override is merged onto the base"],
+    ["Credentials", "The op:// item is read just in time from 1Password"],
+    ["Launch", "A Browserbase session starts"],
+    ["Login & verify", "Agent logs in, finds and verifies the record"],
+    ["Execute", "The goal runs, output is checked against the locked extract schema"],
+    ["Deliver", "The envelope is sealed and returned or pushed"]
+  ];
+  view().innerHTML =
+    '<div class="page-head"><div><h1>Docs</h1><div class="sub">How a job flows through the gateway, and what each status means.</div></div></div>' +
+
+    '<div class="card"><div class="card-head"><h3>Architecture</h3></div>' +
+    '<div class="arch"><div class="arch-stack">' +
+    '<div class="arch-box"><div class="t1">intake-app</div><div class="t2">caller</div></div>' +
+    '<div class="arch-box"><div class="t1">ops-dashboard</div><div class="t2">caller</div></div></div>' +
+    '<div class="arch-arrow">' + icon("arrow", "ic-lg") + '</div>' +
+    '<div class="arch-box gw" style="min-width:220px"><div class="t1">Gateway</div><div class="t2">bearer auth, job store</div>' +
+    '<div class="arch-inner"><span class="tag">server</span><span class="tag">catalogue</span><span class="tag">secrets</span><span class="tag">runner</span></div></div>' +
+    '<div class="arch-arrow">' + icon("arrow", "ic-lg") + '</div>' +
+    '<div class="arch-stack">' +
+    '<div class="arch-box"><div class="t1">1Password</div><div class="t2">credentials</div></div>' +
+    '<div class="arch-box"><div class="t1">Browserbase</div><div class="t2">browser sessions</div></div></div>' +
+    '</div></div>' +
+
+    '<div class="grid" style="grid-template-columns:1.1fr 1fr;margin-top:14px">' +
+    '<div class="card"><div class="card-head"><h3>Request lifecycle</h3><span class="xs muted">click a step</span></div>' +
+    '<div class="stepper" id="stepper">' + steps.map((s, i) =>
+      '<button class="step-btn' + (state.ui.stepIdx === i ? " on" : "") + '" onclick="setStep(' + i + ')"><span class="step-num">' + (i + 1) + '</span>' +
+      '<span class="vstack"><span class="st1">' + s[0] + '</span><span class="st2">' + s[1] + '</span></span></button>').join("") + '</div></div>' +
+
+    '<div><div class="card" style="margin-bottom:14px"><div class="card-head"><h3>Status semantics</h3></div>' +
+    '<div class="vstack" style="gap:12px">' +
+    '<div><div class="xs muted" style="margin-bottom:6px">OUTCOME (envelope status, soft-filled pill)</div><div class="wrap-chips">' +
+    outcomePill("success", "success") + outcomePill("failure", "failure") + outcomePill("error", "error") + '</div>' +
+    '<div class="xs muted" style="margin-top:6px">success = data returned. failure = ran fine, business answer is negative. error = the run itself broke.</div></div>' +
+    '<div><div class="xs muted" style="margin-bottom:6px">LIFECYCLE (job state, outlined chip)</div><div class="wrap-chips">' +
+    lifecycleChip("QUEUED") + lifecycleChip("RUNNING") + lifecycleChip("DONE") + '</div></div>' +
+    '<div><div class="xs muted" style="margin-bottom:6px">CONTEXT (warm login, never green)</div><div class="wrap-chips">' +
+    ctxChip("warm") + ctxChip("cold") + ctxChip("expired") + '</div></div>' +
+    '</div></div>' +
+    '<div class="card"><div class="card-head"><h3>Error-code taxonomy</h3></div>' +
+    '<div class="tbl-scroll"><table><thead><tr><th>Code</th><th>Stage</th><th>Family</th></tr></thead><tbody>' +
+    state.errorCodes.map(e => '<tr><td class="mono xs">' + e.code + '</td><td class="sm txt2">' + e.stage + '</td><td>' +
+      (e.family === "error" ? '<span class="tag" style="color:var(--danger)">error</span>' : '<span class="tag" style="color:var(--warning)">failure</span>') + '</td></tr>').join("") +
+    '</tbody></table></div></div></div></div>';
+}
+function setStep(i) { state.ui.stepIdx = i; renderDocs(); }
+/* re-render audit rows helper alias used after live appends */
+function renderAuditRows() { drawAuditRows(); }
+
+/* ============================================================
+   BOOT
+   ============================================================ */
+renderNav();
+router();
+</script>
+</body>
+</html>

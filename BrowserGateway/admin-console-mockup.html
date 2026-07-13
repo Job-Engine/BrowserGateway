@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gateway Admin - Browser Automation Gateway</title>
+<style>
+  :root {
+    --bg: #f7f6f3; --surface: #ffffff; --surface2: #f0efeb; --text: #1a1a18;
+    --text2: #6b6a66; --border: #dedcd5; --accent: #2563eb; --accent-soft: #dbeafe;
+    --amber: #b45309; --amber-soft: #fef3c7; --green: #15803d; --green-soft: #dcfce7;
+    --red: #b91c1c; --red-soft: #fee2e2; --gray-soft: #e7e5e0;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161513; --surface: #201f1c; --surface2: #2a2926; --text: #ecebe7;
+      --text2: #a3a29c; --border: #3a3936; --accent: #60a5fa; --accent-soft: #1e3a5f;
+      --amber: #fbbf24; --amber-soft: #4a3510; --green: #4ade80; --green-soft: #123822;
+      --red: #f87171; --red-soft: #451a1a; --gray-soft: #33322f;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 14px; line-height: 1.5; }
+  .app { display: flex; min-height: 100vh; }
+  .side { width: 216px; flex-shrink: 0; background: var(--surface); border-right: 1px solid var(--border); padding: 18px 12px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+  .brand { font-weight: 700; font-size: 15px; padding: 0 10px 4px; }
+  .brand small { display: block; font-weight: 500; color: var(--text2); font-size: 11px; }
+  .env { display: inline-block; margin: 8px 10px 14px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; padding: 2px 8px; border-radius: 99px; background: var(--red-soft); color: var(--red); }
+  .side a { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-radius: 8px; color: var(--text2); text-decoration: none; font-weight: 500; cursor: pointer; margin-bottom: 2px; }
+  .side a:hover { background: var(--surface2); color: var(--text); }
+  .side a.on { background: var(--accent-soft); color: var(--accent); }
+  .side .grp { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text2); padding: 14px 10px 6px; }
+  .badge { font-size: 10.5px; background: var(--gray-soft); color: var(--text2); border-radius: 99px; padding: 1px 7px; font-weight: 600; }
+  .badge.red { background: var(--red-soft); color: var(--red); }
+  .badge.amber { background: var(--amber-soft); color: var(--amber); }
+  .main { flex: 1; padding: 26px 30px 80px; max-width: 1080px; }
+  .page { display: none; }
+  .page.on { display: block; }
+  h1 { font-size: 20px; margin-bottom: 2px; }
+  .crumb { color: var(--text2); font-size: 13px; margin-bottom: 22px; }
+  .crumb a { color: var(--accent); cursor: pointer; text-decoration: none; }
+  h2 { font-size: 15px; margin: 24px 0 10px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+  .stat .k { font-size: 12px; color: var(--text2); font-weight: 600; }
+  .stat .v { font-size: 22px; font-weight: 700; margin-top: 2px; }
+  .stat .d { font-size: 11.5px; color: var(--text2); }
+  .v.ok { color: var(--green); } .v.bad { color: var(--red); } .v.warn { color: var(--amber); }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+  .card h3 { font-size: 14px; margin-bottom: 10px; }
+  table { width: 100%; border-collapse: collapse; }
+  .tblwrap { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--surface); }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: middle; }
+  th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text2); background: var(--surface2); }
+  tr:last-child td { border-bottom: none; }
+  tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface2); }
+  .mono { font-family: var(--mono); font-size: 12px; }
+  .pill { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 9px; border-radius: 99px; }
+  .pill.success, .pill.ok, .pill.warm, .pill.DONE, .pill.live { background: var(--green-soft); color: var(--green); }
+  .pill.failure, .pill.warn, .pill.RUNNING, .pill.draft, .pill.override { background: var(--amber-soft); color: var(--amber); }
+  .pill.error, .pill.bad, .pill.expired, .pill.revoked { background: var(--red-soft); color: var(--red); }
+  .pill.QUEUED, .pill.cold, .pill.off, .pill.none { background: var(--gray-soft); color: var(--text2); }
+  button { font-family: inherit; font-size: 13px; font-weight: 600; border-radius: 8px; padding: 7px 14px; cursor: pointer; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+  button.pri { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.danger { background: var(--red-soft); border-color: transparent; color: var(--red); }
+  button.sm { padding: 4px 10px; font-size: 12px; }
+  button:hover { filter: brightness(0.97); }
+  input[type=text], input[type=number], select, textarea {
+    font-family: inherit; font-size: 13px; color: var(--text); background: var(--surface2);
+    border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; width: 100%;
+  }
+  textarea { font-family: var(--mono); font-size: 12px; min-height: 72px; resize: vertical; }
+  label.f { display: block; font-size: 11.5px; font-weight: 600; color: var(--text2); margin: 12px 0 4px; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  .row > * { flex: 1; min-width: 140px; }
+  .toolbar { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
+  .toolbar input, .toolbar select { width: auto; min-width: 150px; }
+  .tgl { position: relative; width: 38px; height: 21px; background: var(--gray-soft); border-radius: 99px; cursor: pointer; transition: background 0.15s; flex-shrink: 0; display: inline-block; vertical-align: middle; }
+  .tgl::after { content: ""; position: absolute; top: 2.5px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: left 0.15s; box-shadow: 0 1px 2px rgba(0,0,0,0.25); }
+  .tgl.on { background: var(--green); } .tgl.on::after { left: 19px; }
+  .tglrow { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 9px 0; border-bottom: 1px solid var(--border); }
+  .tglrow:last-child { border-bottom: none; }
+  .tglrow .t1 { font-weight: 600; font-size: 13.5px; }
+  .tglrow .t2 { font-size: 12px; color: var(--text2); }
+  .drawer { position: fixed; top: 0; right: -560px; width: 540px; max-width: 94vw; height: 100vh; background: var(--surface); border-left: 1px solid var(--border); box-shadow: -12px 0 30px rgba(0,0,0,0.12); transition: right 0.22s; z-index: 50; overflow-y: auto; padding: 22px; }
+  .drawer.open { right: 0; }
+  .drawer h2 { margin-top: 0; font-size: 16px; }
+  .dclose { float: right; }
+  pre { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; font-family: var(--mono); font-size: 11.5px; overflow-x: auto; line-height: 1.55; margin: 8px 0; }
+  .kv { display: grid; grid-template-columns: 140px 1fr; gap: 4px 10px; font-size: 13px; margin: 10px 0; }
+  .kv .k { color: var(--text2); }
+  .scrim { position: fixed; inset: 0; background: rgba(0,0,0,0.35); display: none; align-items: center; justify-content: center; z-index: 90; }
+  .scrim.open { display: flex; }
+  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 22px; width: 500px; max-width: 92vw; max-height: 86vh; overflow-y: auto; }
+  .modal h2 { margin-top: 0; font-size: 16px; }
+  .modal .btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; }
+  #toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 9px 18px; border-radius: 99px; font-size: 13px; font-weight: 600; opacity: 0; transition: opacity 0.2s; z-index: 99; pointer-events: none; }
+  #toast.show { opacity: 1; }
+  .bars { display: flex; align-items: flex-end; gap: 6px; height: 90px; padding: 6px 0 0; }
+  .bar { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; gap: 1px; }
+  .bar div { border-radius: 3px 3px 0 0; }
+  .bar .lbl { font-size: 10px; color: var(--text2); text-align: center; margin-top: 4px; }
+  .seg-ok { background: var(--green); opacity: 0.75; } .seg-fail { background: var(--amber); opacity: 0.8; } .seg-err { background: var(--red); opacity: 0.8; }
+  .note { border: 1px solid var(--border); border-left: 3px solid var(--accent); background: var(--surface); border-radius: 8px; padding: 10px 14px; font-size: 12.5px; color: var(--text2); margin: 14px 0; }
+  .meter { height: 7px; background: var(--gray-soft); border-radius: 99px; overflow: hidden; margin-top: 6px; }
+  .meter div { height: 100%; background: var(--accent); border-radius: 99px; }
+  .mockbanner { background: var(--amber-soft); color: var(--amber); font-size: 12px; font-weight: 600; text-align: center; padding: 6px; border-bottom: 1px solid var(--border); }
+  .chip { display: inline-block; font-size: 11px; font-weight: 600; background: var(--surface2); border: 1px solid var(--border); border-radius: 99px; padding: 1px 8px; margin: 1px 2px; }
+</style>
+</head>
+<body>
+<div class="mockbanner">MOCKUP: all data is fake and every change is in-memory only. Job shape: POST /jobs { useCase: "platform.action", client, input }</div>
+<div class="app">
+
+<aside class="side">
+  <div class="brand">Gateway Admin<small>Browser Automation Gateway</small></div>
+  <span class="env">PROD</span>
+  <a data-page="overview" class="on">Overview</a>
+  <a data-page="jobs">Jobs <span class="badge">2 running</span></a>
+  <div class="grp">Configuration</div>
+  <a data-page="catalogue">Catalogue <span class="badge">3 platforms</span></a>
+  <a data-page="creds">Credentials <span class="badge red">2</span></a>
+  <a data-page="vaults">Vaults &amp; Tokens <span class="badge amber">1</span></a>
+  <a data-page="runner">Runner Policy</a>
+  <div class="grp">Access</div>
+  <a data-page="callers">API Access</a>
+  <div class="grp">Operations</div>
+  <a data-page="alerts">Alerts &amp; Canaries</a>
+  <a data-page="audit">Audit Log</a>
+  <a data-page="settings">Settings</a>
+</aside>
+
+<main class="main">
+
+<!-- ================= OVERVIEW ================= -->
+<div class="page on" id="page-overview">
+  <h1>Overview</h1>
+  <div class="crumb">Last 7 days, all platforms and clients</div>
+  <div class="stats">
+    <div class="stat"><div class="k">Jobs (7d)</div><div class="v">387</div><div class="d">55 / day avg</div></div>
+    <div class="stat"><div class="k">Success rate</div><div class="v ok">86.8%</div><div class="d">failure 8.5%, error 4.7%</div></div>
+    <div class="stat"><div class="k">Running now</div><div class="v">2</div><div class="d">of 5 session cap</div></div>
+    <div class="stat"><div class="k">Median duration</div><div class="v">41s</div><div class="d">p95: 118s</div></div>
+    <div class="stat"><div class="k">Cred health</div><div class="v bad">2 failing</div><div class="d">lightreach/sunpath, govnet</div></div>
+    <div class="stat"><div class="k">Est. cost (7d)</div><div class="v">$34.10</div><div class="d">LLM + browser minutes</div></div>
+  </div>
+  <div class="cards">
+    <div class="card"><h3>Runs per day</h3><div class="bars" id="bars"></div></div>
+    <div class="card"><h3>Recent failures &amp; errors</h3><div class="tblwrap"><table id="ov-fails"></table></div></div>
+    <div class="card">
+      <h3>System health</h3>
+      <div class="kv">
+        <span class="k">Gateway</span><span><span class="pill ok">healthy</span> uptime 12d 4h</span>
+        <span class="k">Job store</span><span><span class="pill warn">in-memory</span> lost on restart</span>
+        <span class="k">1Password</span><span><span class="pill ok">reachable</span> 31% rate budget</span>
+        <span class="k">Browserbase</span><span><span class="pill ok">reachable</span> 2/5 sessions</span>
+        <span class="k">Version</span><span class="mono">gateway 0.5.0, stagehand 3.x</span>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Hot spots (7d)</h3>
+      <div class="tblwrap"><table>
+        <tr><th>Platform / client</th><th>Runs</th><th>Success</th></tr>
+        <tr><td class="mono">lightreach / lgcyco</td><td>151</td><td><span class="pill ok">93%</span></td></tr>
+        <tr><td class="mono">lightreach / brandx</td><td>87</td><td><span class="pill ok">89%</span></td></tr>
+        <tr><td class="mono">lightreach / sunpath</td><td>34</td><td><span class="pill bad">41%</span></td></tr>
+        <tr><td class="mono">acme / default</td><td>61</td><td><span class="pill ok">85%</span></td></tr>
+        <tr><td class="mono">govnet / default</td><td>13</td><td><span class="pill bad">38%</span></td></tr>
+      </table></div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= JOBS ================= -->
+<div class="page" id="page-jobs">
+  <h1>Jobs</h1>
+  <div class="crumb">Every run, newest first. Click a row for the full envelope.</div>
+  <div class="toolbar">
+    <input type="text" id="job-q" placeholder="Search jobId, useCase, client, caller">
+    <select id="job-client"><option value="">All clients</option></select>
+    <select id="job-state"><option value="">All states</option><option>RUNNING</option><option>QUEUED</option><option>DONE</option></select>
+    <select id="job-status"><option value="">All outcomes</option><option>success</option><option>failure</option><option>error</option></select>
+    <button class="sm" onclick="renderJobs()">Filter</button>
+  </div>
+  <div class="tblwrap"><table id="jobs-tbl"></table></div>
+</div>
+
+<!-- ================= CATALOGUE ================= -->
+<div class="page" id="page-catalogue">
+  <div id="cat-root"></div>
+</div>
+
+<!-- ================= CREDENTIALS ================= -->
+<div class="page" id="page-creds">
+  <h1>Credentials</h1>
+  <div class="crumb">Per platform, per client. One 1Password item per login: op://&lt;vault&gt;/&lt;platform&gt;.&lt;client&gt;. Values are never displayed.</div>
+  <div id="cred-root"></div>
+  <div class="note">A red row means every job for that platform + client pair returns AUTH errors until the credential is fixed in 1Password. Rotation needs no deploy; the next run picks it up.</div>
+</div>
+
+<!-- ================= VAULTS ================= -->
+<div class="page" id="page-vaults">
+  <h1>Vaults &amp; Service Accounts</h1>
+  <div class="crumb">One vault per domain, one scoped service account per vault. Client logins live inside as items named platform.client.</div>
+  <div class="cards" id="vault-cards"></div>
+</div>
+
+<!-- ================= RUNNER ================= -->
+<div class="page" id="page-runner">
+  <h1>Runner Policy</h1>
+  <div class="crumb">Global defaults. Actions and client overrides can tighten but never loosen risk gates.</div>
+  <div class="cards">
+    <div class="card">
+      <h3>Risk gates</h3>
+      <div class="tglrow"><div><div class="t1">Auto-approve login steps</div><div class="t2">Headless runs cannot ask a human to approve the login submit</div></div><span class="tgl on"></span></div>
+      <div class="tglrow"><div><div class="t1">Block destructive actions</div><div class="t2">Refuse clicks classified as delete / submit / save after login</div></div><span class="tgl on"></span></div>
+      <div class="tglrow"><div><div class="t1">Require match verification</div><div class="t2">Never extract from a record whose identity was not verified</div></div><span class="tgl on"></span></div>
+      <div class="tglrow"><div><div class="t1">Serialize per credential</div><div class="t2">Never run two sessions with the same platform + client login at once</div></div><span class="tgl on"></span></div>
+    </div>
+    <div class="card">
+      <h3>Execution limits</h3>
+      <label class="f">Max agent steps per run</label><input type="number" value="40">
+      <label class="f">Run timeout (seconds)</label><input type="number" value="180">
+      <label class="f">Max attempts (auto-retry on error)</label><input type="number" value="2">
+      <label class="f">Concurrent Browserbase sessions</label><input type="number" value="5">
+    </div>
+    <div class="card">
+      <h3>Model &amp; credentials</h3>
+      <label class="f">Planner model</label>
+      <select><option>claude-sonnet (current)</option><option>claude-haiku (cheap runs)</option><option>claude-opus (hard portals)</option></select>
+      <label class="f">Credential fast path</label>
+      <select><option>JIT op read only (current)</option><option>Context per client first, op read fallback</option></select>
+      <label class="f">Secrets cache TTL (seconds)</label><input type="number" value="60">
+      <div class="tglrow" style="margin-top:10px"><div><div class="t1">Redact secrets in logs</div><div class="t2">Cannot be disabled</div></div><span class="tgl on" style="opacity:0.45;pointer-events:none"></span></div>
+    </div>
+  </div>
+  <div class="toolbar" style="margin-top:16px">
+    <button class="pri" onclick="audit('Updated runner policy'); toast('Runner policy saved')">Save policy</button>
+    <button onclick="toast('Reverted to saved values')">Discard</button>
+  </div>
+</div>
+
+<!-- ================= CALLERS ================= -->
+<div class="page" id="page-callers">
+  <h1>API Access</h1>
+  <div class="crumb">Scopes are useCase x client: an app may run an action for some brands and not others.</div>
+  <div class="toolbar"><button class="pri" onclick="newToken()">+ Issue caller token</button></div>
+  <div class="cards" id="caller-cards"></div>
+</div>
+
+<!-- ================= ALERTS ================= -->
+<div class="page" id="page-alerts">
+  <h1>Alerts &amp; Canaries</h1>
+  <div class="crumb">Canaries run per platform + client pair, because each brand can have its own layout and its own way of breaking.</div>
+  <div class="cards">
+    <div class="card">
+      <h3>Alert rules</h3>
+      <div class="tglrow"><div><div class="t1">Error-rate alert</div><div class="t2">Any platform + client pair above threshold in a 1h window</div></div><span class="tgl on"></span></div>
+      <label class="f">Error-rate threshold (%)</label><input type="number" value="15">
+      <div class="tglrow" style="margin-top:8px"><div><div class="t1">Credential failure alert</div><div class="t2">Immediate on AUTH_REQUIRED / LOGIN_FAILED</div></div><span class="tgl on"></span></div>
+      <div class="tglrow"><div><div class="t1">Layout drift alert</div><div class="t2">Canary passed but needed extra steps or a label fallback</div></div><span class="tgl on"></span></div>
+      <div class="tglrow"><div><div class="t1">Rate-limit alert</div><div class="t2">Any service account above 80% budget</div></div><span class="tgl on"></span></div>
+      <label class="f">Notify via</label>
+      <input type="text" value="#eng-automation (Slack webhook)">
+    </div>
+    <div class="card">
+      <h3>Canary matrix</h3>
+      <div class="tblwrap"><table id="canary-tbl"></table></div>
+      <div class="toolbar" style="margin-top:12px">
+        <button class="sm" onclick="toast('Canary run queued for every platform + client pair')">Run all canaries now</button>
+      </div>
+    </div>
+  </div>
+  <div class="toolbar" style="margin-top:16px"><button class="pri" onclick="audit('Updated alert rules'); toast('Alert config saved')">Save alerts</button></div>
+</div>
+
+<!-- ================= AUDIT ================= -->
+<div class="page" id="page-audit">
+  <h1>Audit Log</h1>
+  <div class="crumb">Every admin action, immutable. Actions you take in this mockup are appended live.</div>
+  <div class="tblwrap"><table id="audit-tbl"></table></div>
+</div>
+
+<!-- ================= SETTINGS ================= -->
+<div class="page" id="page-settings">
+  <h1>Settings</h1>
+  <div class="crumb">Deployment and environment. Mostly read-only from here; changed via infra.</div>
+  <div class="cards">
+    <div class="card">
+      <h3>Environment</h3>
+      <div class="kv">
+        <span class="k">PORT</span><span class="mono">8080</span>
+        <span class="k">GATEWAY_TOKEN</span><span class="mono">set (bearer auth on)</span>
+        <span class="k">OP_TOKEN (Portals)</span><span class="mono">set, scoped: Portals</span>
+        <span class="k">OP_TOKEN (GovSites)</span><span class="mono">set, scoped: GovSites</span>
+        <span class="k">BROWSERBASE_API_KEY</span><span class="mono">set</span>
+        <span class="k">BROWSERBASE_PROJECT_ID</span><span class="mono">Gojobengine / Production</span>
+        <span class="k">ANTHROPIC_API_KEY</span><span class="mono">set</span>
+        <span class="k">PORTAL_* fallback</span><span class="mono">disabled in PROD</span>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Feature flags</h3>
+      <div class="tglrow"><div><div class="t1">Browserbase Contexts per client</div><div class="t2">Warm login per platform + client, fall back to JIT creds</div></div><span class="tgl"></span></div>
+      <div class="tglrow"><div><div class="t1">1Password SDK (replace op CLI)</div><div class="t2">Better for a long-running service</div></div><span class="tgl"></span></div>
+      <div class="tglrow"><div><div class="t1">Durable job store (Redis)</div><div class="t2">Required before multiple replicas</div></div><span class="tgl"></span></div>
+      <div class="tglrow"><div><div class="t1">Webhooks to callers</div><div class="t2">Push DONE instead of polling</div></div><span class="tgl"></span></div>
+      <div class="tglrow"><div><div class="t1">Structured pino logging</div><div class="t2">JSON logs with caller correlation IDs (house standard)</div></div><span class="tgl"></span></div>
+      <div class="tglrow"><div><div class="t1">Express migration</div><div class="t2">Replace bare node:http with the house REST standard</div></div><span class="tgl"></span></div>
+    </div>
+    <div class="card">
+      <h3>Danger zone</h3>
+      <p style="font-size:12.5px;color:var(--text2);margin-bottom:10px">These act immediately on live traffic.</p>
+      <div class="toolbar">
+        <button class="danger" onclick="confirmModal('Pause all new jobs?', 'Running jobs finish. POST /jobs returns 503 until resumed.', () => { audit('Paused all new jobs'); toast('Gateway paused'); })">Pause all new jobs</button>
+        <button class="danger" onclick="confirmModal('Kill running sessions?', 'Both running Browserbase sessions will be terminated and their jobs marked as error.', () => { audit('Killed all running sessions'); toast('Sessions killed'); })">Kill running sessions</button>
+        <button class="danger" onclick="confirmModal('Flush secrets cache?', 'Next runs re-read from 1Password. Watch rate limits.', () => { audit('Flushed secrets cache'); toast('Secrets cache flushed'); })">Flush secrets cache</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+</main>
+</div>
+
+<div class="drawer" id="drawer"></div>
+<div class="scrim" id="scrim"><div class="modal" id="modal"></div></div>
+<div id="toast"></div>
+
+<script>
+// ---------------- state ----------------
+const state = {
+  platforms: [
+    {
+      key: "lightreach", name: "LightReach / Palmetto", vault: "Portals", url: "https://palmetto.finance/accounts",
+      actions: [
+        { key: "milestoneStatus", risk: "read-only", enabled: true, status: "live", variants: ["NTP","PTO","Install","Permit"], timeout: 180, attempts: 2,
+          input: "name: string\naddress: string\nprojectId?: string\nmilestone: enum(NTP | PTO | Install | Permit)",
+          extract: "milestone, value, matchVerified,\nmatchedName, matchedAddress",
+          goal: "Look up {name} at {address}. Verify name AND address both match. Find the {milestone} status field and report it exactly as shown. Read-only.",
+          runs: 214, success: 91 },
+        { key: "stipStatus", risk: "read-only", enabled: true, status: "live", variants: [], timeout: 180, attempts: 2,
+          input: "name: string\naddress: string",
+          extract: "stipItems[] (name, status), openCount",
+          goal: "Look up {name} at {address}, verify the match, then list all open stipulations with their status. Read-only.",
+          runs: 44, success: 88 },
+        { key: "fundingStatus", risk: "read-only", enabled: true, status: "live", variants: ["M1","M2","M3"], timeout: 180, attempts: 2,
+          input: "name: string\naddress: string\ntranche: enum(M1 | M2 | M3)",
+          extract: "tranche, fundedAt, amount",
+          goal: "Open the verified record, find funding tranche {tranche}, report funded date and amount. Read-only.",
+          runs: 31, success: 84 },
+        { key: "accountSnapshot", risk: "read-only", enabled: false, status: "draft", variants: [], timeout: 240, attempts: 2,
+          input: "name: string\naddress: string",
+          extract: "stage, ntpDate, ptoDate, lender, systemSizeKw",
+          goal: "Open the verified record and read the full status panel. Read-only.",
+          runs: 0, success: 0 },
+        { key: "documentsList", risk: "read-only", enabled: false, status: "draft", variants: [], timeout: 180, attempts: 2,
+          input: "name: string\naddress: string",
+          extract: "documents[] (name, status, uploadedAt)",
+          goal: "Open the verified record's documents tab and list every document with its status. Read-only.",
+          runs: 0, success: 0 }
+      ],
+      clients: [
+        { key: "lgcyco", enabled: true, credOk: true, lastRead: "3m ago", ctx: "warm", ctxAge: "2d", overrides: {} },
+        { key: "brandx", enabled: true, credOk: true, lastRead: "1h ago", ctx: "warm", ctxAge: "5d",
+          overrides: { milestoneStatus: { labels: "NTP Date -> Notice to Proceed Date\nPTO -> Permission to Operate", hints: "Status fields live in the right-hand summary rail, not the main table.", url: "", timeout: null } } },
+        { key: "acmesolar", enabled: true, credOk: true, lastRead: "2h ago", ctx: "cold", ctxAge: null, overrides: {} },
+        { key: "sunpath", enabled: true, credOk: false, lastErr: "LOGIN_FAILED", lastRead: "failed 41m ago", ctx: "expired", ctxAge: "19d", overrides: {} },
+        { key: "voltic", enabled: false, credOk: true, lastRead: "6h ago", ctx: "cold", ctxAge: null,
+          overrides: { milestoneStatus: { labels: "", hints: "", url: "https://voltic.palmetto.finance/accounts", timeout: 240 } } },
+        { key: "heliora", enabled: true, credOk: true, lastRead: "20m ago", ctx: "warm", ctxAge: "1d", overrides: {} }
+      ]
+    },
+    {
+      key: "acme", name: "Acme Vendor Portal", vault: "Portals", url: "https://portal.acme.com",
+      actions: [
+        { key: "invoiceStatus", risk: "read-only", enabled: true, status: "live", variants: [], timeout: 120, attempts: 2,
+          input: "invoiceId: string", extract: "status, paidAt, amount",
+          goal: "Find invoice {invoiceId} and report its status and paid date. Read-only.", runs: 61, success: 85 }
+      ],
+      clients: [
+        { key: "default", enabled: true, credOk: true, lastRead: "58s ago", ctx: "cold", ctxAge: null, overrides: {} },
+        { key: "brandx", enabled: true, credOk: true, lastRead: "3h ago", ctx: "cold", ctxAge: null, overrides: {} }
+      ]
+    },
+    {
+      key: "govnet", name: "GovNet Permits", vault: "GovSites", url: "https://permits.govnet.example",
+      actions: [
+        { key: "permitStatus", risk: "read-only", enabled: true, status: "live", variants: [], timeout: 240, attempts: 3,
+          input: "permitNo: string\ncounty: string", extract: "permitStatus, issuedAt, inspector",
+          goal: "Search permit {permitNo} in {county} county and report its status. Read-only.", runs: 13, success: 38 }
+      ],
+      clients: [
+        { key: "default", enabled: true, credOk: false, lastErr: "AUTH_REQUIRED", lastRead: "failed 22m ago", ctx: "expired", ctxAge: "31d", overrides: {} }
+      ]
+    }
+  ],
+  vaults: [
+    { name: "Portals", items: 8, sa: "sa-gateway-portals", tokenAge: 14, rate: 31 },
+    { name: "GovSites", items: 1, sa: "sa-gateway-govsites", tokenAge: 96, rate: 4, warn: true }
+  ],
+  callers: [
+    { name: "intake-app", token: "gw_live_....c41f", created: "2026-05-02", rate: 60, runs: 265, active: true,
+      scopes: [ { uc: "lightreach.milestoneStatus", clients: "lgcyco, brandx" }, { uc: "lightreach.stipStatus", clients: "lgcyco" } ] },
+    { name: "ops-dashboard", token: "gw_live_....98aa", created: "2026-06-11", rate: 30, runs: 122, active: true,
+      scopes: [ { uc: "lightreach.milestoneStatus", clients: "*" }, { uc: "acme.invoiceStatus", clients: "*" }, { uc: "govnet.permitStatus", clients: "*" } ] }
+  ],
+  jobs: [
+    { id: "j_9f2e1", uc: "lightreach.milestoneStatus", client: "lgcyco", caller: "intake-app", state: "RUNNING", status: null, dur: "34s", at: "12:41:05", data: null, err: null },
+    { id: "j_8c77b", uc: "acme.invoiceStatus", client: "default", caller: "ops-dashboard", state: "RUNNING", status: null, dur: "12s", at: "12:41:27", data: null, err: null },
+    { id: "j_71d0a", uc: "lightreach.milestoneStatus", client: "brandx", caller: "intake-app", state: "QUEUED", status: null, dur: null, at: "12:41:44", data: null, err: null },
+    { id: "j_66e19", uc: "lightreach.milestoneStatus", client: "lgcyco", caller: "intake-app", state: "DONE", status: "success", dur: "39s", at: "12:38:02", data: { milestone: "NTP", value: "2026-06-30", matchVerified: true }, err: null },
+    { id: "j_65aa0", uc: "lightreach.milestoneStatus", client: "brandx", caller: "intake-app", state: "DONE", status: "failure", dur: "44s", at: "12:31:19", data: { matchVerified: false, recordFound: true }, err: { code: "MATCH_FAILED", message: "Address differs: 125 Solar Way vs 123 Solar Way", fields: ["address"] } },
+    { id: "j_64f3c", uc: "govnet.permitStatus", client: "default", caller: "ops-dashboard", state: "DONE", status: "error", dur: "18s", at: "12:22:51", data: null, err: { code: "AUTH_REQUIRED", message: "Login page shown, credentials rejected" } },
+    { id: "j_63b8d", uc: "lightreach.milestoneStatus", client: "sunpath", caller: "ops-dashboard", state: "DONE", status: "error", dur: "21s", at: "12:19:40", data: null, err: { code: "LOGIN_FAILED", message: "Credentials rejected for sunpath login" } },
+    { id: "j_62c44", uc: "lightreach.fundingStatus", client: "lgcyco", caller: "ops-dashboard", state: "DONE", status: "success", dur: "36s", at: "12:07:12", data: { tranche: "M1", fundedAt: "2026-07-02", amount: "$18,400" }, err: null },
+    { id: "j_61a02", uc: "lightreach.milestoneStatus", client: "heliora", caller: "intake-app", state: "DONE", status: "error", dur: "181s", at: "11:58:47", data: null, err: { code: "TIMEOUT", message: "Run exceeded 180s at step search" } },
+    { id: "j_60d91", uc: "lightreach.stipStatus", client: "lgcyco", caller: "intake-app", state: "DONE", status: "success", dur: "41s", at: "11:52:30", data: { openCount: 2 }, err: null }
+  ],
+  audit: [
+    { at: "2026-07-11 09:14", who: "andy@gojobengine.com", what: "Added client override on lightreach.milestoneStatus for brandx (label map)" },
+    { at: "2026-07-10 17:02", who: "andy@gojobengine.com", what: "Rotated service account token for vault Portals" },
+    { at: "2026-07-10 16:44", who: "andy@gojobengine.com", what: "Added client voltic to lightreach (custom URL override)" },
+    { at: "2026-07-09 11:20", who: "andy@gojobengine.com", what: "Issued caller token ops-dashboard, 3 scopes" },
+    { at: "2026-07-08 15:31", who: "andy@gojobengine.com", what: "Created action lightreach.fundingStatus with variants M1, M2, M3" }
+  ],
+  days: [ [46,5,3],[52,4,2],[63,7,3],[55,3,3],[58,6,2],[47,4,4],[51,4,3] ]
+};
+
+// ---------------- helpers ----------------
+const $ = s => document.querySelector(s);
+function plat(k) { return state.platforms.find(p => p.key === k); }
+function toast(msg) {
+  const t = $("#toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 2600);
+}
+function audit(what) {
+  state.audit.unshift({ at: "2026-07-11 " + new Date().toTimeString().slice(0,5), who: "andy@gojobengine.com", what });
+  renderAudit();
+}
+function openDrawer(html) { $("#drawer").innerHTML = html; $("#drawer").classList.add("open"); }
+function closeDrawer() { $("#drawer").classList.remove("open"); }
+function openModal(html) { $("#modal").innerHTML = html; $("#scrim").classList.add("open"); }
+function closeModal() { $("#scrim").classList.remove("open"); }
+$("#scrim").addEventListener("click", e => { if (e.target === $("#scrim")) closeModal(); });
+function confirmModal(title, body, fn) {
+  openModal(`<h2>${title}</h2><p style="color:var(--text2);font-size:13.5px">${body}</p>
+    <div class="btns"><button onclick="closeModal()">Cancel</button>
+    <button class="danger" id="cf-yes">Confirm</button></div>`);
+  $("#cf-yes").onclick = () => { closeModal(); fn(); };
+}
+document.addEventListener("click", e => {
+  const t = e.target.closest(".tgl");
+  if (t && !t.dataset.managed && !t.style.pointerEvents) t.classList.toggle("on");
+});
+
+// ---------------- nav ----------------
+document.querySelectorAll(".side a").forEach(a => {
+  a.addEventListener("click", () => {
+    document.querySelectorAll(".side a").forEach(x => x.classList.remove("on"));
+    a.classList.add("on");
+    document.querySelectorAll(".page").forEach(p => p.classList.remove("on"));
+    $("#page-" + a.dataset.page).classList.add("on");
+    closeDrawer();
+  });
+});
+
+// ---------------- overview ----------------
+(function renderBars() {
+  const labels = ["Sat","Sun","Mon","Tue","Wed","Thu","Fri"];
+  const max = Math.max(...state.days.map(d => d[0]+d[1]+d[2]));
+  $("#bars").innerHTML = state.days.map((d, i) => {
+    const h = v => Math.round(v / max * 74);
+    return `<div class="bar">
+      <div class="seg-err" style="height:${h(d[2])}px"></div>
+      <div class="seg-fail" style="height:${h(d[1])}px"></div>
+      <div class="seg-ok" style="height:${h(d[0])}px"></div>
+      <div class="lbl">${labels[i]}</div></div>`;
+  }).join("");
+})();
+(function renderOvFails() {
+  const rows = state.jobs.filter(j => j.status === "failure" || j.status === "error").slice(0, 4);
+  $("#ov-fails").innerHTML = `<tr><th>Job</th><th>Use case / client</th><th>Outcome</th></tr>` +
+    rows.map(j => `<tr class="click" onclick="showJob('${j.id}')">
+      <td class="mono">${j.id}</td><td class="mono">${j.uc}<br><span style="color:var(--text2)">${j.client}</span></td>
+      <td><span class="pill ${j.status}">${j.err ? j.err.code : j.status}</span></td></tr>`).join("");
+})();
+
+// ---------------- jobs ----------------
+(function fillClientFilter() {
+  const clients = [...new Set(state.platforms.flatMap(p => p.clients.map(c => c.key)))];
+  $("#job-client").innerHTML = `<option value="">All clients</option>` + clients.map(c => `<option>${c}</option>`).join("");
+})();
+function renderJobs() {
+  const q = ($("#job-q").value || "").toLowerCase();
+  const cl = $("#job-client").value, st = $("#job-state").value, ou = $("#job-status").value;
+  const rows = state.jobs.filter(j =>
+    (!q || (j.id + j.uc + j.client + j.caller).toLowerCase().includes(q)) &&
+    (!cl || j.client === cl) && (!st || j.state === st) && (!ou || j.status === ou));
+  $("#jobs-tbl").innerHTML = `<tr><th>Job</th><th>Use case</th><th>Client</th><th>Caller</th><th>State</th><th>Outcome</th><th>Duration</th><th>Started</th></tr>` +
+    rows.map(j => `<tr class="click" onclick="showJob('${j.id}')">
+      <td class="mono">${j.id}</td><td class="mono">${j.uc}</td><td><span class="chip">${j.client}</span></td><td>${j.caller}</td>
+      <td><span class="pill ${j.state}">${j.state}</span></td>
+      <td>${j.status ? `<span class="pill ${j.status}">${j.status}</span>` : '<span style="color:var(--text2)">-</span>'}</td>
+      <td>${j.dur || "-"}</td><td>${j.at}</td></tr>`).join("");
+}
+function showJob(id) {
+  const j = state.jobs.find(x => x.id === id);
+  const pKey = j.uc.split(".")[0];
+  const p = plat(pKey);
+  const env = {
+    jobId: j.id, useCase: j.uc, client: j.client, status: j.status || "(pending)",
+    data: j.data, error: j.err,
+    meta: { sessionId: "bb_sess_" + j.id.slice(2), sessionReplayUrl: "https://browserbase.com/sessions/bb_sess_" + j.id.slice(2), credentialItem: `op://${p ? p.vault : "Portals"}/${pKey}.${j.client}`, ranAt: "2026-07-11T" + j.at + "Z", durationMs: j.dur ? parseInt(j.dur) * 1000 : null, attempts: 1 }
+  };
+  const actions = j.state === "RUNNING"
+    ? `<button class="danger sm" onclick="cancelJob('${j.id}')">Cancel run</button>`
+    : j.state === "DONE" && j.status !== "success"
+      ? `<button class="pri sm" onclick="retryJob('${j.id}')">Retry job</button>` : "";
+  openDrawer(`<button class="dclose sm" onclick="closeDrawer()">Close</button>
+    <h2>Job ${j.id}</h2>
+    <div class="kv">
+      <span class="k">Use case</span><span class="mono">${j.uc}</span>
+      <span class="k">Client</span><span><span class="chip">${j.client}</span></span>
+      <span class="k">Credential</span><span class="mono">${env.meta.credentialItem}</span>
+      <span class="k">Caller</span><span>${j.caller}</span>
+      <span class="k">State</span><span><span class="pill ${j.state}">${j.state}</span></span>
+      <span class="k">Outcome</span><span>${j.status ? `<span class="pill ${j.status}">${j.status}</span>` : "-"}</span>
+      <span class="k">Replay</span><span><a href="#" onclick="toast('Would open the Browserbase session replay'); return false" style="color:var(--accent)">watch session replay</a></span>
+    </div>
+    <div class="toolbar">${actions}
+      <button class="sm" onclick="toast('Envelope copied')">Copy envelope</button></div>
+    <h2 style="font-size:13px">Envelope</h2>
+    <pre>${JSON.stringify(env, null, 2)}</pre>`);
+}
+function retryJob(id) {
+  const j = state.jobs.find(x => x.id === id);
+  const nid = "j_" + Math.random().toString(16).slice(2, 7);
+  state.jobs.unshift({ id: nid, uc: j.uc, client: j.client, caller: "admin (manual retry)", state: "QUEUED", status: null, dur: null, at: new Date().toTimeString().slice(0,8), data: null, err: null });
+  audit(`Manually retried job ${id} as ${nid}`);
+  renderJobs(); closeDrawer(); toast(`Retry queued as ${nid}`);
+}
+function cancelJob(id) {
+  confirmModal("Cancel running job?", `${id} will be stopped and marked as error (CANCELLED).`, () => {
+    const j = state.jobs.find(x => x.id === id);
+    j.state = "DONE"; j.status = "error"; j.err = { code: "CANCELLED", message: "Cancelled by admin" };
+    audit(`Cancelled job ${id}`); renderJobs(); closeDrawer(); toast("Job cancelled");
+  });
+}
+
+// ---------------- catalogue (platform -> actions + clients) ----------------
+let catView = { platform: null };
+function renderCat() {
+  if (!catView.platform) return renderPlatformList();
+  return renderPlatformDetail(catView.platform);
+}
+function renderPlatformList() {
+  $("#cat-root").innerHTML = `
+    <h1>Catalogue</h1>
+    <div class="crumb">Organized per platform, then per client. An action is defined once; clients override navigation only.</div>
+    <div class="toolbar"><button class="pri" onclick="toast('Would open the new platform wizard: base URL, vault, first client, first action')">+ New platform</button></div>
+    <div class="tblwrap"><table>
+      <tr><th>Platform</th><th>Vault</th><th>Actions</th><th>Clients</th><th>Runs 7d</th><th>Health</th><th></th></tr>
+      ${state.platforms.map(p => {
+        const runs = p.actions.reduce((s, a) => s + a.runs, 0);
+        const bad = p.clients.filter(c => !c.credOk).length;
+        return `<tr class="click" onclick="openPlatform('${p.key}')">
+          <td><strong>${p.name}</strong><br><span class="mono" style="color:var(--text2)">${p.key}</span></td>
+          <td>${p.vault}</td>
+          <td>${p.actions.length} (${p.actions.filter(a => a.status === "live").length} live)</td>
+          <td>${p.clients.length}</td>
+          <td>${runs}</td>
+          <td>${bad ? `<span class="pill bad">${bad} cred issue${bad > 1 ? "s" : ""}</span>` : '<span class="pill ok">healthy</span>'}</td>
+          <td><button class="sm">Open</button></td></tr>`;
+      }).join("")}
+    </table></div>`;
+}
+function openPlatform(key) { catView.platform = key; renderCat(); }
+function backToPlatforms() { catView.platform = null; renderCat(); }
+function renderPlatformDetail(key) {
+  const p = plat(key);
+  $("#cat-root").innerHTML = `
+    <h1>${p.name}</h1>
+    <div class="crumb"><a onclick="backToPlatforms()">Catalogue</a> / ${p.key} &nbsp; <span class="mono">${p.url}</span> &nbsp; vault: ${p.vault}</div>
+
+    <h2>Actions (${p.actions.length})</h2>
+    <div class="toolbar"><button class="pri sm" onclick="editAction('${p.key}', null)">+ New action</button></div>
+    <div class="tblwrap"><table>
+      <tr><th>Action</th><th>Variants</th><th>Risk</th><th>Runs 7d</th><th>Success</th><th>Status</th><th>Enabled</th><th></th></tr>
+      ${p.actions.map((a, i) => `<tr>
+        <td class="mono">${a.key}</td>
+        <td>${a.variants.length ? a.variants.map(v => `<span class="chip">${v}</span>`).join("") : '<span style="color:var(--text2)">-</span>'}</td>
+        <td><span class="pill ok">${a.risk}</span></td>
+        <td>${a.runs}</td><td>${a.runs ? a.success + "%" : "-"}</td>
+        <td><span class="pill ${a.status}">${a.status}</span></td>
+        <td><span class="tgl ${a.enabled ? "on" : ""}" data-managed="1" onclick="toggleAction('${p.key}', ${i}, this)"></span></td>
+        <td><button class="sm" onclick="editAction('${p.key}', ${i})">Edit</button>
+            <button class="sm" onclick="testAction('${p.key}', ${i})">Test</button></td></tr>`).join("")}
+    </table></div>
+
+    <h2>Clients (${p.clients.length})</h2>
+    <div class="toolbar"><button class="pri sm" onclick="toast('Would add a client: name it, create the 1Password item ${p.key}.<client>, optionally add overrides')">+ New client</button></div>
+    <div class="tblwrap"><table>
+      <tr><th>Client</th><th>1Password item</th><th>Creds</th><th>Context</th><th>Overrides</th><th>Enabled</th><th></th></tr>
+      ${p.clients.map((c, i) => {
+        const ov = Object.keys(c.overrides);
+        return `<tr>
+          <td><span class="chip">${c.key}</span></td>
+          <td class="mono">op://${p.vault}/${p.key}.${c.key}</td>
+          <td>${c.credOk ? `<span class="pill ok">ok</span> <span style="color:var(--text2);font-size:12px">${c.lastRead}</span>` : `<span class="pill bad">${c.lastErr}</span>`}</td>
+          <td><span class="pill ${c.ctx}">${c.ctx}</span></td>
+          <td>${ov.length ? ov.map(k => `<span class="pill override">${k}</span>`).join(" ") : '<span class="pill none">none</span>'}</td>
+          <td><span class="tgl ${c.enabled ? "on" : ""}" data-managed="1" onclick="toggleClient('${p.key}', ${i}, this)"></span></td>
+          <td><button class="sm" onclick="testLogin('${p.key}', ${i})">Test login</button></td></tr>`;
+      }).join("")}
+    </table></div>
+    <div class="note">Disabling a client here blocks jobs for every action on ${p.key} for that brand. Overrides adjust navigation (labels, URL, hints) per client; the extract schema is locked at the action level so callers always get one shape.</div>`;
+}
+function toggleAction(pk, i, el) {
+  el.classList.toggle("on");
+  const a = plat(pk).actions[i];
+  a.enabled = !a.enabled;
+  audit(`${a.enabled ? "Enabled" : "Disabled"} action ${pk}.${a.key}`);
+  toast(`${pk}.${a.key} ${a.enabled ? "enabled" : "disabled"}`);
+}
+function toggleClient(pk, i, el) {
+  el.classList.toggle("on");
+  const c = plat(pk).clients[i];
+  c.enabled = !c.enabled;
+  audit(`${c.enabled ? "Enabled" : "Disabled"} client ${c.key} on ${pk}`);
+  toast(`${pk} / ${c.key} ${c.enabled ? "enabled" : "disabled"}`);
+}
+
+// ---------------- action editor ----------------
+function editAction(pk, i) {
+  const p = plat(pk);
+  const a = i === null ? { key: "", risk: "read-only", variants: [], timeout: 180, attempts: 2, input: "", extract: "", goal: "", status: "draft", enabled: false } : p.actions[i];
+  const ovRows = p.clients.map((c, ci) => {
+    const has = a.key && c.overrides[a.key];
+    return `<div class="tglrow">
+      <div><div class="t1"><span class="chip">${c.key}</span> ${has ? '<span class="pill override">override</span>' : '<span class="pill none">base</span>'}</div>
+      <div class="t2">${has ? [has.labels && "label map", has.url && "custom URL", has.hints && "goal hints", has.timeout && "timeout"].filter(Boolean).join(", ") : "uses the base definition"}</div></div>
+      <button class="sm" onclick="editOverride('${pk}', ${ci}, '${a.key}')">${has ? "Edit" : "Add"} override</button>
+    </div>`;
+  }).join("");
+  openDrawer(`<button class="dclose sm" onclick="closeDrawer()">Close</button>
+    <h2>${i === null ? "New action on " + pk : pk + "." + a.key}</h2>
+    <label class="f">Action key</label><input type="text" id="a-key" value="${a.key}" placeholder="milestoneStatus">
+    <label class="f">Variants (enum the caller picks via input, comma separated)</label>
+    <input type="text" id="a-var" value="${a.variants.join(", ")}" placeholder="NTP, PTO, Install, Permit">
+    <label class="f">Input schema</label><textarea id="a-in">${a.input}</textarea>
+    <label class="f">Goal template ({field} interpolated from input)</label><textarea id="a-goal">${a.goal}</textarea>
+    <label class="f">Extract schema (locked per action, clients cannot override)</label><textarea id="a-ex">${a.extract}</textarea>
+    <div class="row">
+      <div><label class="f">Timeout (s)</label><input type="number" id="a-to" value="${a.timeout}"></div>
+      <div><label class="f">Max attempts</label><input type="number" id="a-at" value="${a.attempts}"></div>
+      <div><label class="f">Risk</label><select id="a-risk"><option ${a.risk === "read-only" ? "selected" : ""}>read-only</option><option>form-submit (approval flow)</option></select></div>
+    </div>
+    ${i !== null ? `<h2 style="font-size:13px;margin-top:20px">Per-client overrides</h2>${ovRows}
+    <div class="note">If a client's layout changes the data shape itself, do not override; create a separate action. Overrides are for navigation differences only.</div>` : ""}
+    <div class="toolbar" style="margin-top:16px">
+      <button class="pri" onclick="saveAction('${pk}', ${i})">Save action</button>
+      <button onclick="closeDrawer()">Cancel</button>
+      ${i !== null ? `<button class="danger" onclick="confirmModal('Delete ${pk}.${a.key}?','Callers get 404 for this action immediately.',()=>{plat('${pk}').actions.splice(${i},1);audit('Deleted action ${pk}.${a.key}');renderCat();closeDrawer();toast('Action deleted')})">Delete</button>` : ""}
+    </div>`);
+}
+function saveAction(pk, i) {
+  const p = plat(pk);
+  const a = {
+    key: $("#a-key").value, variants: $("#a-var").value.split(",").map(s => s.trim()).filter(Boolean),
+    input: $("#a-in").value, goal: $("#a-goal").value, extract: $("#a-ex").value,
+    timeout: +$("#a-to").value, attempts: +$("#a-at").value,
+    risk: $("#a-risk").value.startsWith("read") ? "read-only" : "form-submit",
+    status: i === null ? "draft" : p.actions[i].status,
+    enabled: i === null ? false : p.actions[i].enabled,
+    runs: i === null ? 0 : p.actions[i].runs, success: i === null ? 0 : p.actions[i].success
+  };
+  if (!a.key) { toast("Action key is required"); return; }
+  if (i === null) p.actions.push(a); else p.actions[i] = a;
+  audit(`${i === null ? "Created" : "Edited"} action ${pk}.${a.key}`);
+  renderCat(); closeDrawer(); toast("Action saved as draft");
+}
+
+// ---------------- override editor ----------------
+function editOverride(pk, ci, ak) {
+  const p = plat(pk); const c = p.clients[ci];
+  const o = c.overrides[ak] || { labels: "", hints: "", url: "", timeout: null };
+  openDrawer(`<button class="dclose sm" onclick="closeDrawer()">Close</button>
+    <h2>Override: ${pk}.${ak} for <span class="chip">${c.key}</span></h2>
+    <p style="color:var(--text2);font-size:13px">Only navigation may differ per client. Input and extract schemas stay identical, so callers never know which brand the agent logged into.</p>
+    <label class="f">Custom start URL (blank = base)</label><input type="text" id="o-url" value="${o.url || ""}" placeholder="${p.url}">
+    <label class="f">Label map (base label -> this client's label, one per line)</label>
+    <textarea id="o-labels" placeholder="NTP Date -> Notice to Proceed Date">${o.labels || ""}</textarea>
+    <label class="f">Goal hints (appended to the base goal)</label>
+    <textarea id="o-hints" placeholder="Status fields live in the right-hand summary rail.">${o.hints || ""}</textarea>
+    <label class="f">Timeout override (blank = base)</label><input type="number" id="o-to" value="${o.timeout || ""}">
+    <div class="toolbar" style="margin-top:16px">
+      <button class="pri" onclick="saveOverride('${pk}', ${ci}, '${ak}')">Save override</button>
+      <button class="sm" onclick="testActionAs('${pk}', '${ak}', '${c.key}')">Test as ${c.key}</button>
+      ${c.overrides[ak] ? `<button class="danger" onclick="confirmModal('Remove override?','${c.key} goes back to the base definition of ${ak}.',()=>{delete plat('${pk}').clients[${ci}].overrides['${ak}'];audit('Removed override on ${pk}.${ak} for ${c.key}');renderCat();closeDrawer();toast('Override removed')})">Remove</button>` : ""}
+    </div>
+    <div class="note">Layout completely different for this brand? If even the label map cannot bridge it, the honest move is a separate action (e.g. ${ak}V2) with its own goal, and this client pinned to it.</div>`);
+}
+function saveOverride(pk, ci, ak) {
+  const c = plat(pk).clients[ci];
+  const o = { url: $("#o-url").value, labels: $("#o-labels").value, hints: $("#o-hints").value, timeout: $("#o-to").value ? +$("#o-to").value : null };
+  if (!o.url && !o.labels && !o.hints && !o.timeout) { toast("Empty override; nothing saved"); return; }
+  c.overrides[ak] = o;
+  audit(`Saved override on ${pk}.${ak} for client ${c.key}`);
+  renderCat(); closeDrawer(); toast(`Override saved for ${c.key}`);
+}
+
+// ---------------- test runs ----------------
+function testAction(pk, i) {
+  const a = plat(pk).actions[i];
+  testActionAs(pk, a.key, plat(pk).clients[0].key);
+}
+function testActionAs(pk, ak, ck) {
+  const p = plat(pk);
+  const a = p.actions.find(x => x.key === ak) || { variants: [] };
+  openModal(`<h2>Test run: ${pk}.${ak}</h2>
+    <label class="f">Run as client</label>
+    <select id="t-client">${p.clients.map(c => `<option ${c.key === ck ? "selected" : ""}>${c.key}</option>`).join("")}</select>
+    ${a.variants.length ? `<label class="f">Variant</label><select id="t-var">${a.variants.map(v => `<option>${v}</option>`).join("")}</select>` : ""}
+    <label class="f">Test input (JSON)</label>
+    <textarea id="t-in">{ "name": "Jane Q. Homeowner", "address": "123 Solar Way, Austin TX 78701" }</textarea>
+    <div id="t-out"></div>
+    <div class="btns"><button onclick="closeModal()">Close</button><button class="pri" id="t-go">Start test run</button></div>`);
+  $("#t-go").onclick = () => {
+    const cl = $("#t-client").value;
+    const c = p.clients.find(x => x.key === cl);
+    const ov = c && c.overrides[ak];
+    $("#t-out").innerHTML = `<pre>queued (test, not counted in stats)...\nresolving ${pk}.${ak} ${ov ? "+ override for " + cl : "(base definition)"}\ncreds: op://${p.vault}/${pk}.${cl}... ok\nstarting Browserbase session...</pre>`;
+    setTimeout(() => {
+      if (c && !c.credOk) {
+        $("#t-out").innerHTML += `<pre>login FAILED: ${c.lastErr}\nstatus: error. Fix the credential in 1Password first.</pre>`;
+        toast("Test failed: " + c.lastErr);
+      } else {
+        $("#t-out").innerHTML += `<pre>login ok (variables redacted)\n${ov && ov.labels ? "label map applied: " + ov.labels.split("\\n").length + " mapping(s)\n" : ""}executing goal... ok\n\n{ "status": "success", "client": "${cl}",\n  "meta": { "sessionReplayUrl": "https://browserbase.com/sessions/bb_test_91" } }</pre>`;
+        toast("Test run finished: success");
+      }
+      audit(`Ran test for ${pk}.${ak} as ${cl}`);
+    }, 1300);
+  };
+}
+
+// ---------------- credentials page ----------------
+function testLogin(pk, ci) {
+  const p = plat(pk); const c = p.clients[ci];
+  toast(`Testing login: ${pk} / ${c.key}...`);
+  setTimeout(() => {
+    if (!c.credOk) toast(`${pk}/${c.key} FAILED: ${c.lastErr}. Rotate in 1Password.`);
+    else toast(`${pk}/${c.key} login ok (replay saved)`);
+    audit(`Ran login test for ${pk} / ${c.key}`);
+  }, 1100);
+}
+function warmCtx(pk, ci) {
+  const c = plat(pk).clients[ci];
+  c.ctx = "warm"; c.ctxAge = "0m";
+  renderCreds(); renderCat(); audit(`Re-warmed Context for ${pk} / ${c.key}`); toast(`${pk}/${c.key} context warmed`);
+}
+function renderCreds() {
+  $("#cred-root").innerHTML = state.platforms.map(p => `
+    <h2>${p.name} <span class="badge">${p.clients.length} logins</span> <span class="badge">vault: ${p.vault}</span></h2>
+    <div class="tblwrap" style="margin-bottom:18px"><table>
+      <tr><th>Client</th><th>Item</th><th>Fields</th><th>Last op read</th><th>Health</th><th>Context</th><th></th></tr>
+      ${p.clients.map((c, i) => `<tr>
+        <td><span class="chip">${c.key}</span></td>
+        <td class="mono">op://${p.vault}/${p.key}.${c.key}</td>
+        <td>username, password${p.key === "lightreach" || p.key === "govnet" ? ", TOTP" : ""}</td>
+        <td>${c.lastRead}</td>
+        <td>${c.credOk ? '<span class="pill ok">healthy</span>' : `<span class="pill bad">${c.lastErr}</span>`}</td>
+        <td><span class="pill ${c.ctx}">${c.ctx}</span>${c.ctxAge ? ` <span style="color:var(--text2);font-size:11px">${c.ctxAge}</span>` : ""}</td>
+        <td><button class="sm" onclick="testLogin('${p.key}', ${i})">Test</button>
+            <button class="sm" onclick="warmCtx('${p.key}', ${i})">Warm</button>
+            <button class="sm" onclick="toast('Would deep-link to this item in 1Password')">1PW</button></td></tr>`).join("")}
+    </table></div>`).join("");
+}
+
+// ---------------- vaults ----------------
+function renderVaults() {
+  $("#vault-cards").innerHTML = state.vaults.map((v, i) => `<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <h3 style="margin:0">${v.name}</h3>
+      ${v.warn ? '<span class="pill warn">rotate recommended</span>' : '<span class="pill ok">healthy</span>'}
+    </div>
+    <div class="kv">
+      <span class="k">Login items</span><span>${v.items} (platform.client)</span>
+      <span class="k">Service account</span><span class="mono">${v.sa}</span>
+      <span class="k">Token age</span><span>${v.tokenAge} days${v.tokenAge > 90 ? " (old)" : ""}</span>
+      <span class="k">Rate budget used</span><span>${v.rate}% this hour</span>
+    </div>
+    <div class="meter"><div style="width:${v.rate}%"></div></div>
+    <div class="toolbar" style="margin-top:12px">
+      <button class="sm" onclick="rotateToken(${i})">Rotate token</button>
+      <button class="sm" onclick="toast('Would list item names only, never values')">View items</button>
+    </div></div>`).join("");
+}
+function rotateToken(i) {
+  const v = state.vaults[i];
+  confirmModal(`Rotate token for ${v.name}?`,
+    "A new service account token is issued and the old one revoked after a 10 minute grace window. Update the gateway env before the window closes.",
+    () => { v.tokenAge = 0; v.warn = false; renderVaults(); audit(`Rotated service account token for vault ${v.name}`); toast("Token rotated. Grace window: 10 min."); });
+}
+
+// ---------------- callers ----------------
+function renderCallers() {
+  $("#caller-cards").innerHTML = state.callers.map((c, i) => `<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <h3 style="margin:0">${c.name}</h3>
+      <span class="pill ${c.active ? "ok" : "revoked"}">${c.active ? "active" : "revoked"}</span>
+    </div>
+    <div class="kv">
+      <span class="k">Token</span><span class="mono">${c.token}</span>
+      <span class="k">Issued</span><span>${c.created}</span>
+      <span class="k">Rate limit</span><span>${c.rate} jobs / min</span>
+      <span class="k">Runs (7d)</span><span>${c.runs}</span>
+    </div>
+    <label class="f">Scopes (useCase x clients, * = all clients)</label>
+    ${c.scopes.map((s, si) => `<div class="row" style="margin-bottom:6px">
+      <span class="mono" style="flex:2;min-width:180px">${s.uc}</span>
+      <input type="text" value="${s.clients}" style="flex:1" onchange="state.callers[${i}].scopes[${si}].clients=this.value; audit('Changed client scope on ${s.uc} for ${c.name}'); toast('Scope updated')">
+      <button class="sm" onclick="state.callers[${i}].scopes.splice(${si},1); audit('Removed scope ${s.uc} from ${c.name}'); renderCallers(); toast('Scope removed')">Remove</button>
+    </div>`).join("")}
+    <div class="toolbar" style="margin-top:8px">
+      <button class="sm" onclick="addScope(${i})">+ Add scope</button>
+      <button class="danger sm" onclick="revokeCaller(${i})">Revoke token</button>
+    </div></div>`).join("");
+}
+function addScope(i) {
+  const ucs = state.platforms.flatMap(p => p.actions.map(a => p.key + "." + a.key));
+  openModal(`<h2>Add scope to ${state.callers[i].name}</h2>
+    <label class="f">Use case</label><select id="s-uc">${ucs.map(u => `<option>${u}</option>`).join("")}</select>
+    <label class="f">Clients (comma separated, * = all)</label><input type="text" id="s-cl" value="*">
+    <div class="btns"><button onclick="closeModal()">Cancel</button><button class="pri" id="s-go">Add</button></div>`);
+  $("#s-go").onclick = () => {
+    state.callers[i].scopes.push({ uc: $("#s-uc").value, clients: $("#s-cl").value });
+    audit(`Granted scope ${$("#s-uc").value} (${$("#s-cl").value}) to ${state.callers[i].name}`);
+    closeModal(); renderCallers(); toast("Scope added");
+  };
+}
+function revokeCaller(i) {
+  const c = state.callers[i];
+  confirmModal(`Revoke ${c.name}?`, "Every request with this token gets 401 immediately. Running jobs finish.", () => {
+    c.active = false; renderCallers(); audit(`Revoked caller token ${c.name}`); toast("Token revoked");
+  });
+}
+function newToken() {
+  openModal(`<h2>Issue caller token</h2>
+    <label class="f">App name</label><input type="text" id="nt-name" placeholder="billing-service">
+    <label class="f">Rate limit (jobs / min)</label><input type="number" id="nt-rate" value="30">
+    <div class="btns"><button onclick="closeModal()">Cancel</button><button class="pri" id="nt-go">Issue</button></div>`);
+  $("#nt-go").onclick = () => {
+    const name = $("#nt-name").value || "unnamed-app";
+    const tok = "gw_live_" + Math.random().toString(36).slice(2, 14);
+    state.callers.push({ name, token: "gw_live_...." + tok.slice(-4), created: "2026-07-11", scopes: [], rate: +$("#nt-rate").value, runs: 0, active: true });
+    audit(`Issued caller token for ${name}`);
+    renderCallers();
+    openModal(`<h2>Token issued</h2>
+      <p style="color:var(--text2);font-size:13px">Shown once, store it in 1Password. Scopes are empty until you grant useCase x client pairs.</p>
+      <pre>${tok}</pre>
+      <div class="btns"><button class="pri" onclick="closeModal()">Done</button></div>`);
+  };
+}
+
+// ---------------- canaries ----------------
+function renderCanaries() {
+  const rows = state.platforms.flatMap(p => p.clients.map(c => ({ p: p.key, c: c.key, ok: c.credOk, err: c.lastErr })));
+  $("#canary-tbl").innerHTML = `<tr><th>Platform / client</th><th>Schedule</th><th>Last run</th><th>On</th></tr>` +
+    rows.map(r => `<tr>
+      <td class="mono">${r.p} / ${r.c}</td><td>daily 06:00</td>
+      <td>${r.ok ? '<span class="pill ok">passed 4h ago</span>' : `<span class="pill bad">failed: ${r.err}</span>`}</td>
+      <td><span class="tgl on"></span></td></tr>`).join("");
+}
+
+// ---------------- audit ----------------
+function renderAudit() {
+  $("#audit-tbl").innerHTML = `<tr><th>When</th><th>Who</th><th>Action</th></tr>` +
+    state.audit.map(a => `<tr><td style="white-space:nowrap">${a.at}</td><td>${a.who}</td><td>${a.what}</td></tr>`).join("");
+}
+
+// ---------------- boot ----------------
+renderJobs(); renderCat(); renderCreds(); renderVaults(); renderCallers(); renderCanaries(); renderAudit();
+</script>
+</body>
+</html>

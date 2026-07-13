@@ -22,7 +22,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "agent": "tsx src/cli.ts"
+    "agent": "tsx src/cli.ts",
+    "gateway": "tsx src/gateway/server.ts"
   },
   "license": "MIT",
   "dependencies": {

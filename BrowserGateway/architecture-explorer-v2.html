@@ -1,0 +1,1118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Architecture Explorer - Browser Automation Gateway v2</title>
+
+<script type="application/json" id="gateway-manifest">
+{
+  "name": "browser-automation-gateway",
+  "owner": "andy@gojobengine.com",
+  "purpose": "API access to portals that have no API, via LLM-driven cloud browsers",
+  "domain": {
+    "platform": "a website the gateway can operate (e.g. lightreach)",
+    "action": "one task on a platform; owns inputSchema (zod), buildGoal(input), extractSchema (zod, LOCKED, never overridden per client), variants as input enums",
+    "client": "a whitelabel login identity on a platform; credential item op://<vault>/<platform>.<client>; may carry navigation-only overrides: labelMap, startUrl, goalHints, timeout",
+    "job": "one request: {useCase: 'platform.action', client, input}; async, poll for result",
+    "envelope": {
+      "jobId": "string",
+      "useCase": "string",
+      "client": "string",
+      "status": "success | failure | error",
+      "data": "shaped by the action's extractSchema",
+      "error": {
+        "code": "AUTH_REQUIRED | LOGIN_FAILED | SEARCH_FAILED | RECORD_NOT_FOUND | MATCH_FAILED | FIELD_NOT_FOUND | NAVIGATION_ERROR | TIMEOUT",
+        "message": "sanitized"
+      },
+      "meta": {
+        "sessionId": "string",
+        "sessionReplayUrl": "string",
+        "credentialItem": "string",
+        "ranAt": "iso",
+        "durationMs": "number",
+        "attempts": "number"
+      }
+    },
+    "statusSemantics": {
+      "success": "goal met, record match verified, data extracted (a legitimately blank field still counts)",
+      "failure": "ran cleanly with a negative business outcome (no match, missing record); callers may automate on this",
+      "error": "system, auth, or navigation problem; callers alert on this"
+    }
+  },
+  "api": {
+    "public": [
+      "GET /health",
+      "GET /catalogue",
+      "POST /jobs",
+      "GET /jobs/:id"
+    ],
+    "style": "async + poll; POST /jobs returns 202 {jobId}; poll GET /jobs/:id until state DONE"
+  },
+  "lockedDecisions": [
+    "credentials fetched just in time via 1Password (op read / SDK), injected as Stagehand variables, never visible to callers or LLMs",
+    "self-hosted Stagehand runner on Browserbase remote browsers; never hosted Browserbase agents",
+    "async + poll API",
+    "trust boundary is the gateway process; the container's only long-lived secrets are vault-scoped 1Password service account tokens",
+    "extract schemas are locked per action and never overridden per client; a client whose data shape differs gets a new action",
+    "read-only: no form submission, payment, or destructive action; enforced in code by a method allowlist, not prompt text"
+  ],
+  "invariants": [
+    "secrets never appear in code, logs, envelopes, error messages, or LLM prompts",
+    "customer PII is redacted from structured logs",
+    "failure and error are never conflated",
+    "job state advances to DONE only after the envelope is written",
+    "TOTP codes are never cached",
+    "one 1Password login item per platform.client pair; one vault per domain; one service account per vault",
+    "an action-client pair cannot serve caller traffic without a passing match-verified test run (the first-live-run rule, enforced in code)",
+    "action definitions are versioned; edits create a new draft version that re-walks the validation and test gates"
+  ],
+  "dataOwnership": {
+    "ours (Postgres)": "platforms, actions and versions, goal templates, schemas, overrides, client rosters, jobs, tokens, canaries, audit, cost",
+    "browserbase": "sessions, replays, Contexts, projects, usage; referenced by ID from our catalogue and reconciled via their API, never the source of truth for definitions"
+  },
+  "actionLifecycle": [
+    "draft",
+    "validated",
+    "tested",
+    "live-per-client",
+    "versioned"
+  ]
+}
+</script>
+
+<style>
+:root {
+  --bg: #fbfbfa; --surface: #fff; --surface-2: #f6f6f4;
+  --border: #e7e6e2; --border-strong: #d8d6d0;
+  --text: #17171a; --text-2: #5c5c66; --text-3: #8a8a94;
+  --accent: #4f46e5; --accent-hover: #4338ca; --accent-soft: #eef2ff;
+  --success: #12805c; --success-soft: #e7f7f0;
+  --warning: #9a6700; --warning-soft: #fdf5e6;
+  --danger: #c0362c; --danger-soft: #fdecea;
+  --info: #2563eb; --info-soft: #e8f0fe;
+  --r-sm: 6px; --r-md: 10px; --r-lg: 14px; --r-full: 999px;
+  --sh-sm: 0 1px 2px rgba(23,23,26,.05), 0 1px 1px rgba(23,23,26,.04);
+  --sh-md: 0 4px 12px rgba(23,23,26,.07), 0 2px 4px rgba(23,23,26,.04);
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --maxw: 1100px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 13.5px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+button { font-family: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+.ic { width: 16px; height: 16px; stroke: currentColor; stroke-width: 1.8; fill: none; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+.ic-lg { width: 20px; height: 20px; }
+
+/* ---------- shell ---------- */
+.wrap { max-width: var(--maxw); margin: 0 auto; padding: 28px 28px 96px; }
+header.head { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 20px; }
+.brand-mark { width: 40px; height: 40px; border-radius: 10px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; box-shadow: var(--sh-sm); flex-shrink: 0; }
+.head h1 { font-size: 22px; font-weight: 700; letter-spacing: -.02em; }
+.head .sub { color: var(--text-2); font-size: 14px; margin-top: 2px; }
+.head .badge { display: inline-flex; align-items: center; gap: 6px; margin-top: 9px; font-size: 11.5px; font-weight: 600; color: var(--accent); background: var(--accent-soft); border-radius: var(--r-full); padding: 3px 10px; }
+.head .badge .ic { width: 13px; height: 13px; }
+
+/* ---------- tabbar ---------- */
+.tabbar { position: sticky; top: 0; z-index: 20; display: flex; gap: 4px; flex-wrap: wrap; padding: 10px 0 12px; margin-bottom: 22px; background: rgba(251,251,250,.9); backdrop-filter: saturate(1.2) blur(8px); border-bottom: 1px solid var(--border); }
+.tab { background: transparent; color: var(--text-2); border: 1px solid transparent; padding: 7px 13px; border-radius: var(--r-md); font-size: 13px; font-weight: 550; cursor: pointer; white-space: nowrap; }
+.tab:hover { background: var(--surface-2); color: var(--text); }
+.tab.active { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); font-weight: 650; }
+
+/* ---------- panels ---------- */
+.panel { display: none; }
+.panel.active { display: block; animation: fade .2s ease; }
+@keyframes fade { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+.panel-head { margin-bottom: 18px; }
+.panel-head h2 { font-size: 18px; font-weight: 700; letter-spacing: -.015em; }
+.panel-head p { color: var(--text-2); font-size: 13.5px; margin-top: 5px; max-width: 780px; }
+
+.eyebrow { font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: .07em; color: var(--text-3); margin: 26px 0 10px; }
+.sm { font-size: 12.5px; } .xs { font-size: 11.5px; }
+.muted { color: var(--text-3); } .txt2 { color: var(--text-2); }
+.mono { font-family: var(--mono); }
+strong { font-weight: 650; }
+
+/* ---------- cards ---------- */
+.grid { display: grid; gap: 14px; }
+.cols-2 { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+.cols-3 { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 18px; box-shadow: var(--sh-sm); }
+.card h3 { font-size: 14px; font-weight: 650; letter-spacing: -.01em; margin-bottom: 8px; }
+.card h3.eye { font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: .06em; color: var(--text-3); margin-bottom: 12px; }
+.card p { font-size: 13px; color: var(--text-2); margin-bottom: 8px; }
+.card p:last-child { margin-bottom: 0; }
+.card .num { display: inline-flex; width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: #fff; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; margin-bottom: 10px; }
+.card .size { display: inline-block; font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: .05em; color: var(--text-3); margin-left: 8px; }
+
+/* ---------- pills / tags ---------- */
+.pill { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 600; border-radius: var(--r-full); padding: 2px 10px; white-space: nowrap; }
+.pill .dot { width: 6px; height: 6px; border-radius: 50%; }
+.pill-success { background: var(--success-soft); color: var(--success); } .pill-success .dot { background: var(--success); }
+.pill-failure { background: var(--warning-soft); color: var(--warning); } .pill-failure .dot { background: var(--warning); }
+.pill-error { background: var(--danger-soft); color: var(--danger); } .pill-error .dot { background: var(--danger); }
+.pill-info { background: var(--info-soft); color: var(--info); } .pill-info .dot { background: var(--info); }
+.tag { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; border-radius: var(--r-sm); padding: 2px 8px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2); white-space: nowrap; }
+.tag-accent { background: var(--accent-soft); border-color: transparent; color: var(--accent); }
+.tag-mono { font-family: var(--mono); font-weight: 500; }
+.tag-code { font-family: var(--mono); font-weight: 600; background: var(--danger-soft); border-color: transparent; color: var(--danger); }
+.wrap-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+
+/* ---------- tables ---------- */
+.tbl-wrap { border: 1px solid var(--border); border-radius: var(--r-lg); overflow: hidden; background: var(--surface); box-shadow: var(--sh-sm); }
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--text-3); background: var(--surface-2); padding: 9px 14px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+td { padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: top; }
+tbody tr:last-child td { border-bottom: none; }
+td code, .icode { font-family: var(--mono); font-size: 12px; background: var(--surface-2); padding: 1px 6px; border-radius: 4px; }
+
+/* ---------- notes ---------- */
+.note { display: flex; gap: 10px; border: 1px solid var(--border); background: var(--surface-2); border-radius: var(--r-md); padding: 12px 15px; font-size: 12.5px; color: var(--text-2); margin: 16px 0; }
+.note .ic { color: var(--text-3); margin-top: 1px; }
+.note.accent { border-left: 3px solid var(--accent); }
+.note.warning { border-left: 3px solid var(--warning); }
+.note strong { color: var(--text); }
+
+/* ---------- code ---------- */
+pre { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-md); padding: 14px; font-family: var(--mono); font-size: 12px; line-height: 1.6; overflow-x: auto; white-space: pre; color: var(--text); }
+.code-block { position: relative; }
+.copy-btn { position: absolute; top: 8px; right: 8px; display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; color: var(--text-2); background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--r-sm); padding: 4px 9px; cursor: pointer; box-shadow: var(--sh-sm); }
+.copy-btn:hover { background: var(--surface-2); color: var(--text); }
+.copy-btn.copied { color: var(--success); border-color: color-mix(in srgb, var(--success) 40%, var(--border)); }
+.copy-btn .ic { width: 13px; height: 13px; }
+
+/* ---------- system map ---------- */
+.diagram-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); box-shadow: var(--sh-sm); padding: 8px; }
+.diagram { position: relative; width: 960px; height: 580px; margin: 0 auto; }
+.diagram .wires { position: absolute; inset: 0; width: 960px; height: 580px; color: var(--text-3); pointer-events: none; }
+.gw-rect { fill: none; stroke: var(--border-strong); stroke-width: 1.3; stroke-dasharray: 6 5; }
+.gw-label { fill: var(--text-3); font-size: 11px; font-weight: 600; letter-spacing: .04em; font-family: var(--sans); }
+.wire { stroke: var(--text-3); fill: none; stroke-width: 1.5; }
+.wire.dash { stroke-dasharray: 5 4; }
+.wire-lbl { fill: var(--text-3); font-size: 10.5px; font-family: var(--sans); }
+.map-node { position: absolute; display: flex; flex-direction: column; justify-content: center; gap: 3px; padding: 9px 12px; border-radius: var(--r-md); background: var(--surface); border: 1.5px solid var(--border-strong); box-shadow: var(--sh-sm); cursor: pointer; text-align: left; }
+.map-node:hover { border-color: var(--text-3); box-shadow: var(--sh-md); }
+.map-node .mn-t { font-weight: 650; font-size: 12.5px; letter-spacing: -.01em; color: var(--text); }
+.map-node .mn-s { font-size: 10.5px; color: var(--text-3); }
+.map-node.kind-external { background: var(--surface-2); }
+.map-node.kind-edge { background: #fff; }
+.map-node.target { border-style: dashed; border-color: color-mix(in srgb, var(--accent) 50%, var(--border-strong)); background: var(--accent-soft); }
+.map-node.selected { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft), var(--sh-sm); }
+.map-node.target.selected { border-style: dashed; }
+.legend { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 14px; font-size: 12px; color: var(--text-2); }
+.legend span { display: inline-flex; align-items: center; gap: 8px; }
+.legend .swatch { width: 26px; height: 16px; border-radius: 5px; background: var(--surface); }
+.legend .swatch.solid { border: 1.5px solid var(--border-strong); }
+.legend .swatch.dashed { border: 1.5px dashed color-mix(in srgb, var(--accent) 50%, var(--border-strong)); background: var(--accent-soft); }
+.legend .swatch.ext { border: 1.5px solid var(--border-strong); background: var(--surface-2); }
+
+.detail { margin-top: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 20px; box-shadow: var(--sh-sm); min-height: 210px; }
+.dp-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.dp-head h3 { font-size: 16px; font-weight: 700; letter-spacing: -.015em; }
+.dp-sub { font-size: 12px; color: var(--text-3); margin-top: 1px; }
+.dp-resp { font-size: 13px; color: var(--text-2); margin: 12px 0; }
+.dp-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 22px; margin-top: 6px; }
+.dp-lbl { font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: .06em; color: var(--text-3); margin-bottom: 7px; }
+.dp-mono { font-family: var(--mono); font-size: 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 6px 9px; display: inline-block; }
+ul.ticks { list-style: none; }
+ul.ticks li { position: relative; padding: 3px 0 3px 18px; font-size: 12.5px; color: var(--text-2); }
+ul.ticks li::before { content: ""; position: absolute; left: 3px; top: 10px; width: 6px; height: 6px; border-radius: 2px; background: var(--accent); opacity: .55; }
+
+/* ---------- lifecycle ---------- */
+.life-layout { display: grid; grid-template-columns: 320px 1fr; gap: 22px; align-items: start; }
+.step-list { display: flex; flex-direction: column; gap: 2px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 8px; box-shadow: var(--sh-sm); }
+.step-btn { display: flex; gap: 11px; align-items: center; width: 100%; text-align: left; border: 1px solid transparent; background: transparent; padding: 9px 11px; border-radius: var(--r-md); cursor: pointer; }
+.step-btn:hover { background: var(--surface-2); }
+.step-btn.on { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 22%, transparent); }
+.step-num { width: 24px; height: 24px; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--border-strong); color: var(--text-2); font-size: 12px; font-weight: 650; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.step-btn.on .step-num { background: var(--accent); border-color: var(--accent); color: #fff; }
+.step-btn.done .step-num { background: color-mix(in srgb, var(--accent) 16%, #fff); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); color: var(--accent); }
+.step-btn .st1 { font-weight: 600; font-size: 12.5px; color: var(--text); }
+.step-detail { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 22px; box-shadow: var(--sh-sm); }
+.step-detail .step-count { font-size: 11.5px; font-weight: 650; text-transform: uppercase; letter-spacing: .06em; color: var(--text-3); }
+.step-detail h3 { font-size: 17px; font-weight: 700; letter-spacing: -.015em; margin-top: 4px; }
+.step-nav { display: flex; gap: 8px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
+
+/* ---------- buttons ---------- */
+.btn { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 550; border-radius: var(--r-md); padding: 8px 14px; cursor: pointer; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); box-shadow: var(--sh-sm); }
+.btn:hover { background: var(--surface-2); }
+.btn .ic { width: 15px; height: 15px; }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn-primary:hover { background: var(--accent-hover); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+
+/* ---------- domain merge ---------- */
+.hier { display: flex; align-items: stretch; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.hier-box { flex: 1; min-width: 200px; border: 1px solid var(--border); border-radius: var(--r-md); padding: 14px; background: var(--surface); box-shadow: var(--sh-sm); }
+.hier-box .hb-k { font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); }
+.hier-box .hb-t { font-weight: 650; font-size: 13.5px; margin: 4px 0 5px; }
+.hier-box p { font-size: 12px; color: var(--text-2); }
+.hier-arrow { display: flex; align-items: center; color: var(--text-3); }
+.chip-btn { font-size: 12.5px; font-weight: 600; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text-2); border-radius: var(--r-full); padding: 5px 14px; cursor: pointer; font-family: var(--mono); }
+.chip-btn:hover { border-color: var(--text-3); color: var(--text); }
+.chip-btn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.merge-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
+.cfg { border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); overflow: hidden; }
+.cfg-title { display: flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: .06em; color: var(--text-3); padding: 10px 13px; background: var(--surface-2); border-bottom: 1px solid var(--border); }
+.cfg-body { padding: 8px 0; }
+.cfg-line { display: grid; grid-template-columns: 120px 1fr; gap: 12px; padding: 4px 13px; font-family: var(--mono); font-size: 12px; }
+.cfg-line .cfg-k { color: var(--text-3); }
+.cfg-line .cfg-v { color: var(--text); word-break: break-word; }
+.cfg-line.add { background: var(--success-soft); }
+.cfg-line.add .cfg-k { color: var(--success); }
+.cfg-line.muted { color: var(--text-3); grid-template-columns: 1fr; font-family: var(--sans); }
+.locked { border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: var(--r-md); background: var(--surface); padding: 14px 16px; margin-top: 14px; }
+.locked .lk-head { display: flex; align-items: center; gap: 8px; font-weight: 650; font-size: 13px; margin-bottom: 8px; }
+.locked .lk-head .ic { color: var(--accent); }
+.locked pre { margin-top: 8px; }
+.client-note { font-size: 12.5px; color: var(--text-2); margin-top: 12px; font-family: var(--mono); }
+
+/* ---------- flow strip (credentials) ---------- */
+.flow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 8px 0 4px; }
+.flow-box { border: 1px solid var(--border-strong); border-radius: var(--r-md); padding: 10px 13px; background: var(--surface); text-align: center; box-shadow: var(--sh-sm); min-width: 120px; }
+.flow-box .fb-t { font-weight: 650; font-size: 12.5px; }
+.flow-box .fb-s { font-size: 10.5px; color: var(--text-3); margin-top: 2px; }
+.flow-box.ext { background: var(--surface-2); }
+.flow-arrow { color: var(--text-3); display: flex; align-items: center; }
+
+@media (max-width: 720px) {
+  .life-layout { grid-template-columns: 1fr; }
+  .dp-grid { grid-template-columns: 1fr; gap: 14px; }
+  .merge-grid { grid-template-columns: 1fr; }
+}
+@media print {
+  .tabbar { display: none; }
+  .panel { display: block !important; page-break-after: always; }
+  .diagram-scroll { overflow: visible; }
+}
+</style>
+</head>
+<body>
+
+<!-- ===== SVG SPRITE ===== -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-map" viewBox="0 0 24 24"><path d="M9 4L4 6v14l5-2 6 2 5-2V4l-5 2-6-2z"/><path d="M9 4v14M15 6v14"/></symbol>
+<symbol id="i-flow" viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/><path d="M7 10v4a2 2 0 002 2h5"/></symbol>
+<symbol id="i-catalogue" viewBox="0 0 24 24"><path d="M12 3l8 4.5-8 4.5-8-4.5L12 3z"/><path d="M4 12l8 4.5 8-4.5"/><path d="M4 16.5l8 4.5 8-4.5"/></symbol>
+<symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="9" r="4"/><path d="M11 12l8 8M16.5 17.5l2-2"/></symbol>
+<symbol id="i-api" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 00-2 2v3M16 3h3a2 2 0 012 2v3M8 21H5a2 2 0 01-2-2v-3M16 21h3a2 2 0 002-2v-3"/><path d="M8 12h8M12 8v8"/></symbol>
+<symbol id="i-onboard" viewBox="0 0 24 24"><path d="M12 3l8 4v6c0 5-3.4 8-8 9-4.6-1-8-4-8-9V7z"/><path d="M9 12l2 2 4-4"/></symbol>
+<symbol id="i-bot" viewBox="0 0 24 24"><rect x="5" y="8" width="14" height="11" rx="2"/><path d="M12 8V4M8 4h8"/><circle cx="9" cy="13" r="1"/><circle cx="15" cy="13" r="1"/></symbol>
+<symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></symbol>
+<symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 018 0v3"/></symbol>
+<symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h15M13 6l6 6-6 6"/></symbol>
+<symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 13v6a1 1 0 01-1 1H5a1 1 0 01-1-1V7a1 1 0 011-1h6"/></symbol>
+<symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3.5l9.5 16H2.5z"/><path d="M12 9v5M12 17v.5"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+<symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.4 8-8 9-4.6-1-8-4-8-9V6z"/></symbol>
+<symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/></symbol>
+<symbol id="i-rotate" viewBox="0 0 24 24"><path d="M20 12a8 8 0 11-2.3-5.6"/><path d="M20 4v5h-5"/></symbol>
+<symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M20 12H5M11 6l-6 6 6 6"/></symbol>
+<symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M4 12h15M13 6l6 6-6 6"/></symbol>
+</defs></svg>
+
+<div class="wrap">
+
+  <header class="head">
+    <div class="brand-mark"><svg class="ic ic-lg"><use href="#i-map"/></svg></div>
+    <div>
+      <h1>Architecture Explorer</h1>
+      <div class="sub">Browser Automation Gateway v2</div>
+      <span class="badge"><svg class="ic"><use href="#i-bot"/></svg> Built for humans and AI agents</span>
+    </div>
+  </header>
+
+  <nav class="tabbar" id="tabbar" role="tablist" aria-label="Explorer sections">
+    <button class="tab" role="tab" data-route="map" id="tab-map"><span>System map</span></button>
+    <button class="tab" role="tab" data-route="lifecycle" id="tab-lifecycle"><span>Request lifecycle</span></button>
+    <button class="tab" role="tab" data-route="domain" id="tab-domain"><span>Domain model</span></button>
+    <button class="tab" role="tab" data-route="credentials" id="tab-credentials"><span>Credentials</span></button>
+    <button class="tab" role="tab" data-route="api" id="tab-api"><span>API</span></button>
+    <button class="tab" role="tab" data-route="onboarding" id="tab-onboarding"><span>Onboarding</span></button>
+    <button class="tab" role="tab" data-route="agents" id="tab-agents"><span>For AI agents</span></button>
+  </nav>
+
+  <!-- ===================== MAP ===================== -->
+  <section class="panel" id="panel-map" role="tabpanel" aria-labelledby="tab-map">
+    <div class="panel-head">
+      <h2>System map</h2>
+      <p>A caller submits business data and a client; the gateway resolves the action, fetches the login just in time, drives a remote browser, and returns one envelope. Click any node for its responsibility, invariants, source, and v1 status.</p>
+    </div>
+    <div class="diagram-scroll">
+      <div class="diagram">
+        <svg class="wires" viewBox="0 0 960 580" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+          <defs>
+            <marker id="arw" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M2 1 L8 5 L2 9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+            </marker>
+          </defs>
+          <rect class="gw-rect" x="256" y="44" width="434" height="520" rx="14"/>
+          <text class="gw-label" x="266" y="36">GATEWAY - self-hosted Fastify service</text>
+
+          <path class="wire" d="M200,100 H272" marker-end="url(#arw)"/>
+          <text class="wire-lbl" x="236" y="93" text-anchor="middle">POST /jobs</text>
+          <path class="wire dash" d="M272,72 H200" marker-end="url(#arw)"/>
+          <text class="wire-lbl" x="236" y="66" text-anchor="middle">envelope</text>
+          <path class="wire" d="M200,164 H272" marker-end="url(#arw)"/>
+          <text class="wire-lbl" x="236" y="157" text-anchor="middle">admin API</text>
+
+          <path class="wire" d="M360,172 V204" marker-end="url(#arw)" marker-start="url(#arw)"/>
+          <text class="wire-lbl" x="368" y="192" text-anchor="start">job store</text>
+          <path class="wire" d="M360,280 V336" marker-end="url(#arw)"/>
+          <text class="wire-lbl" x="368" y="312" text-anchor="start">skip-locked</text>
+          <path class="wire" d="M360,412 V468" marker-end="url(#arw)"/>
+          <text class="wire-lbl" x="368" y="444" text-anchor="start">dispatch</text>
+
+          <path class="wire" d="M448,506 H500" marker-end="url(#arw)"/>
+          <text class="wire-lbl" x="474" y="499" text-anchor="middle">run</text>
+          <path class="wire" d="M678,506 H756" marker-end="url(#arw)"/>
+          <text class="wire-lbl" x="717" y="499" text-anchor="middle">drive session</text>
+
+          <path class="wire" d="M500,102 C 468,150 468,320 448,362" marker-end="url(#arw)"/>
+          <text class="wire-lbl" x="512" y="120" text-anchor="start">canary</text>
+          <path class="wire" d="M600,468 C 690,430 690,242 756,242" marker-end="url(#arw)"/>
+          <text class="wire-lbl" x="708" y="338" text-anchor="middle">planner</text>
+          <path class="wire" d="M430,468 C 500,432 640,398 756,376" marker-end="url(#arw)"/>
+          <text class="wire-lbl" x="566" y="410" text-anchor="middle">op read</text>
+        </svg>
+        <div id="map-nodes"></div>
+      </div>
+    </div>
+    <div class="legend">
+      <span><i class="swatch solid"></i> Solid border: exists today (v1)</span>
+      <span><i class="swatch dashed"></i> Dashed border: v2 target</span>
+      <span><i class="swatch ext"></i> Filled: external service</span>
+    </div>
+    <div class="detail" id="node-detail"></div>
+  </section>
+
+  <!-- ===================== LIFECYCLE ===================== -->
+  <section class="panel" id="panel-lifecycle" role="tabpanel" aria-labelledby="tab-lifecycle" tabindex="-1">
+    <div class="panel-head">
+      <h2>Request lifecycle</h2>
+      <p>The ten steps of one job, from submission to envelope. Click a step or use the arrow keys. Each step shows what happens, what can go wrong, and the error code that failure produces.</p>
+    </div>
+    <div class="life-layout">
+      <div class="step-list" id="step-list" role="list"></div>
+      <div class="step-detail">
+        <div id="step-detail"></div>
+        <div class="step-nav">
+          <button class="btn" id="step-prev"><svg class="ic"><use href="#i-arrow-left"/></svg> Back</button>
+          <button class="btn btn-primary" id="step-next">Next <svg class="ic"><use href="#i-arrow-right"/></svg></button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== DOMAIN ===================== -->
+  <section class="panel" id="panel-domain" role="tabpanel" aria-labelledby="tab-domain">
+    <div class="panel-head">
+      <h2>Domain model</h2>
+      <p>Three dimensions. A <strong>platform</strong> is a site the gateway can drive. An <strong>action</strong> is defined once per platform and owns the contract. A <strong>client</strong> is a whitelabel login, optionally with navigation-only overrides. The output shape never bends to a client.</p>
+    </div>
+
+    <div class="hier">
+      <div class="hier-box">
+        <div class="hb-k">Platform</div>
+        <div class="hb-t">lightreach</div>
+        <p>A website the gateway can operate. Owns a vault and a client roster.</p>
+      </div>
+      <div class="hier-arrow"><svg class="ic"><use href="#i-arrow"/></svg></div>
+      <div class="hier-box">
+        <div class="hb-k">Action</div>
+        <div class="hb-t">milestoneStatus</div>
+        <p>One task. Owns inputSchema, buildGoal, and a locked extractSchema. Variants are input enums.</p>
+      </div>
+      <div class="hier-arrow"><svg class="ic"><use href="#i-arrow"/></svg></div>
+      <div class="hier-box">
+        <div class="hb-k">Client</div>
+        <div class="hb-t">lgcyco, brandx, ...</div>
+        <p>A whitelabel login identity. May override navigation only, never the answer shape.</p>
+      </div>
+    </div>
+
+    <div class="eyebrow">Worked example: lightreach.milestoneStatus</div>
+    <div class="grid cols-2">
+      <div class="card">
+        <h3 class="eye">The base action</h3>
+        <div class="code-block">
+          <pre>"lightreach.milestoneStatus": {
+  startUrl: "https://palmetto.finance/accounts",
+  requiresLogin: true,
+  timeout: 60000,
+  inputSchema: z.object({
+    name: z.string(),
+    address: z.string(),
+    milestone: z.enum(
+      ["NTP","PTO","Install","Permit"]),
+  }),
+  buildGoal: (i) =>
+    `Look up ${i.name} at ${i.address}.
+     Verify name AND address.
+     Read the ${i.milestone} status
+     field exactly. Read-only.`,
+}</pre>
+        </div>
+        <p class="sm">One action covers every milestone. A new milestone is one enum value, not a new entry.</p>
+      </div>
+      <div class="card">
+        <h3 class="eye">Interactive merge</h3>
+        <p class="sm txt2">Pick a client. The base config plus that client's navigation override equals the effective run config. Changed lines are highlighted; the extract schema never merges.</p>
+        <div class="wrap-chips" id="client-chips" style="margin-top:12px"></div>
+        <div class="client-note" id="client-note"></div>
+        <div class="merge-grid">
+          <div class="cfg">
+            <div class="cfg-title"><svg class="ic" style="width:13px;height:13px"><use href="#i-catalogue"/></svg> Client override</div>
+            <div class="cfg-body" id="override-out"></div>
+          </div>
+          <div class="cfg">
+            <div class="cfg-title"><svg class="ic" style="width:13px;height:13px"><use href="#i-check"/></svg> Effective config</div>
+            <div class="cfg-body" id="eff-out"></div>
+          </div>
+        </div>
+        <div class="locked">
+          <div class="lk-head"><svg class="ic"><use href="#i-lock"/></svg> extractSchema (locked)</div>
+          <p class="sm txt2">Clients never change the answer shape. Callers get one shape per action, always.</p>
+          <pre>{
+  milestone:      string,
+  value:          string | null,
+  matchVerified:  boolean,
+  matchedName:    string,
+  matchedAddress: string
+}</pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="note accent">
+      <svg class="ic"><use href="#i-alert"/></svg>
+      <span><strong>The escape hatch.</strong> Overrides adjust navigation only: label maps, start URL, goal hints, timeout. If a client's layout diverges so far that even the data shape changes, that is a new action with the client pinned to it, never an override.</span>
+    </div>
+  </section>
+
+  <!-- ===================== CREDENTIALS ===================== -->
+  <section class="panel" id="panel-credentials" role="tabpanel" aria-labelledby="tab-credentials">
+    <div class="panel-head">
+      <h2>Credentials</h2>
+      <p>The container holds only vault-scoped service account tokens. Every login is fetched per run and thrown away. Whitelabel means one login item per platform.client pair.</p>
+    </div>
+
+    <div class="eyebrow">The three rules of one</div>
+    <div class="grid cols-3">
+      <div class="card">
+        <h3><svg class="ic ic-lg" style="color:var(--accent)"><use href="#i-shield"/></svg> One vault per domain</h3>
+        <p>Finance portals in <span class="icode">Portals</span>, gov and utility sites in <span class="icode">GovSites</span>. A leaked token exposes one domain, not everything.</p>
+      </div>
+      <div class="card">
+        <h3><svg class="ic ic-lg" style="color:var(--accent)"><use href="#i-key"/></svg> One item per platform.client</h3>
+        <p>Named <span class="icode">platform.client</span> (lightreach.lgcyco, lightreach.brandx). Fields: username, password, one-time password. 5 to 7 clients per platform is the expected shape.</p>
+      </div>
+      <div class="card">
+        <h3><svg class="ic ic-lg" style="color:var(--accent)"><use href="#i-lock"/></svg> One service account per vault</h3>
+        <p>The service account token is the only long-lived secret in the container. Rotation happens in 1Password with no code change.</p>
+      </div>
+    </div>
+
+    <div class="eyebrow">Just-in-time flow, per job</div>
+    <div class="card">
+      <div class="flow">
+        <div class="flow-box"><div class="fb-t">secrets.ts</div><div class="fb-s">resolve(platform, client)</div></div>
+        <div class="flow-arrow"><svg class="ic"><use href="#i-arrow"/></svg></div>
+        <div class="flow-box ext"><div class="fb-t">op read</div><div class="fb-s">op://vault/platform.client</div></div>
+        <div class="flow-arrow"><svg class="ic"><use href="#i-arrow"/></svg></div>
+        <div class="flow-box"><div class="fb-t">Stagehand variables</div><div class="fb-s">named, not valued</div></div>
+        <div class="flow-arrow"><svg class="ic"><use href="#i-arrow"/></svg></div>
+        <div class="flow-box ext"><div class="fb-t">typed into page</div><div class="fb-s">login form only</div></div>
+      </div>
+      <p class="sm txt2" style="margin-top:10px">Values are injected as variables the model references by name. They are never part of an LLM prompt, never written to disk, redacted in logs, and dropped from memory after the run.</p>
+    </div>
+
+    <div class="grid cols-2" style="margin-top:14px">
+      <div class="card">
+        <h3><svg class="ic ic-lg" style="color:var(--warning)"><use href="#i-clock"/></svg> The OTP rule</h3>
+        <p>Time-based codes rotate every 30 seconds, so a cached code is a broken code. TOTP is <strong>never cached</strong>. Each run reads a fresh code at login time.</p>
+      </div>
+      <div class="card">
+        <h3><svg class="ic ic-lg" style="color:var(--accent)"><use href="#i-rotate"/></svg> Rotation story</h3>
+        <p>A password changes upstream, you fix the item in 1Password, and the next run picks it up. No redeploy, no env edit, and the audit trail comes for free.</p>
+      </div>
+    </div>
+
+    <div class="note warning">
+      <svg class="ic"><use href="#i-alert"/></svg>
+      <span><strong>Two non-negotiables.</strong> Never the 1Password browser extension inside a Browserbase session: it needs a persistent desktop app and cannot run in an ephemeral cloud browser. And Contexts (one per platform.client) are a fast path that skips login, but sites force logouts, so JIT credentials stay the reliable fallback.</span>
+    </div>
+  </section>
+
+  <!-- ===================== API ===================== -->
+  <section class="panel" id="panel-api" role="tabpanel" aria-labelledby="tab-api">
+    <div class="panel-head">
+      <h2>API</h2>
+      <p>Async plus poll. Callers send business data and a client, get a jobId, and poll until done. Bearer auth with per-caller tokens; scopes are useCase by client.</p>
+    </div>
+
+    <div class="eyebrow">Endpoints</div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Method</th><th>Path</th><th>Purpose</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">GET</td><td><code>/health</code></td><td>Liveness. Returns <code>{ ok: true }</code>.</td><td><span class="pill pill-success"><span class="dot"></span>live</span></td></tr>
+          <tr><td class="mono">GET</td><td><code>/catalogue</code></td><td>Discover platforms, actions, variants, and clients.</td><td><span class="pill pill-success"><span class="dot"></span>live</span></td></tr>
+          <tr><td class="mono">POST</td><td><code>/jobs</code></td><td>Submit <code>{useCase, client, input}</code>. Returns <code>202 {jobId, state}</code>.</td><td><span class="pill pill-success"><span class="dot"></span>live</span></td></tr>
+          <tr><td class="mono">GET</td><td><code>/jobs/:id</code></td><td>Poll job state; returns the envelope when DONE.</td><td><span class="pill pill-success"><span class="dot"></span>live</span></td></tr>
+          <tr><td class="mono">GET</td><td><code>/openapi.json</code></td><td>Machine-readable API description.</td><td><span class="pill pill-info"><span class="dot"></span>planned</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="grid cols-2" style="margin-top:16px">
+      <div>
+        <div class="eyebrow" style="margin-top:6px">Sample request</div>
+        <div class="code-block">
+          <button class="copy-btn" data-copy="#post-body" aria-label="Copy sample request"><svg class="ic"><use href="#i-copy"/></svg><span class="copy-lbl">Copy</span></button>
+          <pre id="post-body">POST /jobs
+Authorization: Bearer &lt;caller-token>
+Content-Type: application/json
+
+{
+  "useCase": "lightreach.milestoneStatus",
+  "client": "brandx",
+  "input": {
+    "name": "Jane Homeowner",
+    "address": "123 Solar Way, Austin TX",
+    "milestone": "NTP"
+  }
+}</pre>
+        </div>
+        <div class="eyebrow">202 response</div>
+        <pre>HTTP/1.1 202 Accepted
+
+{ "jobId": "job_9f2a7c", "state": "QUEUED" }</pre>
+      </div>
+      <div>
+        <div class="eyebrow" style="margin-top:6px">The envelope (stable across all use cases)</div>
+        <div class="code-block">
+          <button class="copy-btn" data-copy="#envelope-json" aria-label="Copy envelope JSON"><svg class="ic"><use href="#i-copy"/></svg><span class="copy-lbl">Copy</span></button>
+          <pre id="envelope-json">{
+  "jobId": "job_9f2a7c",
+  "useCase": "lightreach.milestoneStatus",
+  "client": "brandx",
+  "status": "success",
+  "data": {
+    "milestone": "NTP",
+    "value": "2026-06-30",
+    "matchVerified": true,
+    "matchedName": "Jane Homeowner",
+    "matchedAddress": "123 Solar Way, Austin TX"
+  },
+  "error": null,
+  "meta": {
+    "sessionId": "bb_7c1d02",
+    "sessionReplayUrl": "https://browserbase.com/sessions/bb_7c1d02",
+    "credentialItem": "op://Portals/lightreach.brandx",
+    "ranAt": "2026-07-11T18:22:04Z",
+    "durationMs": 14820,
+    "attempts": 1
+  }
+}</pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="eyebrow">Status semantics</div>
+    <div class="grid cols-3">
+      <div class="card"><h3><span class="pill pill-success"><span class="dot"></span>success</span></h3><p>Goal met, record match verified, data extracted. A legitimately blank field still counts as success.</p></div>
+      <div class="card"><h3><span class="pill pill-failure"><span class="dot"></span>failure</span></h3><p>Ran cleanly with a negative business outcome (no match, missing record). Callers may <strong>automate</strong> on this.</p></div>
+      <div class="card"><h3><span class="pill pill-error"><span class="dot"></span>error</span></h3><p>System, auth, or navigation problem. Callers <strong>alert</strong> on this. Failure and error are never conflated.</p></div>
+    </div>
+
+    <div class="eyebrow">Error codes (closed set)</div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Code</th><th>Meaning</th></tr></thead>
+        <tbody id="error-rows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ===================== ONBOARDING ===================== -->
+  <section class="panel" id="panel-onboarding" role="tabpanel" aria-labelledby="tab-onboarding">
+    <div class="panel-head">
+      <h2>Onboarding</h2>
+      <p>Three sizes of change. None of them touch server, secrets, or the runner. The core stays generic; portal knowledge lives in the catalogue and 1Password.</p>
+    </div>
+
+    <div class="grid cols-3">
+      <div class="card">
+        <span class="num">1</span><span class="size">Minutes</span>
+        <h3>Add a client to an existing platform</h3>
+        <p>The common case: another whitelabel brand on a platform you already automate.</p>
+        <p><strong>Cost:</strong> one catalogue entry plus one 1Password item (username, password, OTP). No new code. Callers pass <span class="icode">client: "newbrand"</span>.</p>
+      </div>
+      <div class="card">
+        <span class="num">2</span><span class="size">Hours</span>
+        <h3>Add a client that needs overrides</h3>
+        <p>Same brand-on-a-platform case, but the layout differs enough to need navigation help.</p>
+        <p><strong>Cost:</strong> the catalogue entry and 1Password item, plus a navigation override (label map, start URL, goal hints, timeout). The extract schema stays locked.</p>
+      </div>
+      <div class="card">
+        <span class="num">3</span><span class="size">Days</span>
+        <h3>Add a new platform</h3>
+        <p>A site the gateway has never driven.</p>
+        <p><strong>Cost:</strong> a domain vault and service account, one login item per client, a new action recipe (schemas, goal, risk, limits), and a first-live-run test against a known record.</p>
+      </div>
+    </div>
+
+    <div class="note accent">
+      <svg class="ic"><use href="#i-check"/></svg>
+      <span><strong>The first-live-run rule.</strong> No action goes live until it has run against a known record and the labels are confirmed. Field labels and login flows are assumptions until a session replay proves them.</span>
+    </div>
+  </section>
+
+  <!-- ===================== AGENTS ===================== -->
+  <section class="panel" id="panel-agents" role="tabpanel" aria-labelledby="tab-agents">
+    <div class="panel-head">
+      <h2>For AI agents</h2>
+      <p>This system is designed to be agent-legible. The canonical context is small, versioned, and machine-readable, so an agent can orient itself without guessing.</p>
+    </div>
+
+    <div class="grid cols-3">
+      <div class="card">
+        <h3><svg class="ic ic-lg" style="color:var(--accent)"><use href="#i-doc"/></svg> AGENTS.md</h3>
+        <p>At the repo root. The source of truth for what the system is, what it must become, and the rules that are not yours to change.</p>
+      </div>
+      <div class="card">
+        <h3><svg class="ic ic-lg" style="color:var(--accent)"><use href="#i-catalogue"/></svg> GET /catalogue</h3>
+        <p>The live registry: platforms, actions, variants, and clients. What the running gateway can actually do right now.</p>
+      </div>
+      <div class="card">
+        <h3><svg class="ic ic-lg" style="color:var(--accent)"><use href="#i-api"/></svg> GET /openapi.json</h3>
+        <p>The machine-readable API description (planned). Endpoint shapes, request bodies, and the envelope contract.</p>
+      </div>
+    </div>
+
+    <div class="eyebrow">How an agent should orient</div>
+    <div class="card">
+      <ol style="margin:0 0 0 18px; font-size:13px; color:var(--text-2); line-height:1.9">
+        <li>Read <strong>AGENTS.md</strong> at the repo root, including the manifest below and the locked decisions.</li>
+        <li>Read the <strong>architecture review</strong> (<span class="icode">BrowserGateway/architecture-review-2.0.docx</span>) for findings, target modules, and build order.</li>
+        <li>Hit <strong>GET /catalogue</strong> to see what the running gateway can do today.</li>
+        <li>Run the tests (<span class="icode">npm run typecheck</span>, <span class="icode">npm test</span>) before changing anything.</li>
+      </ol>
+    </div>
+
+    <div class="eyebrow">Machine-readable manifest</div>
+    <p class="sm txt2" style="margin-bottom:10px">The exact JSON from AGENTS.md. It is also embedded in this page's head as <span class="icode">&lt;script type="application/json" id="gateway-manifest"></span>, so the page itself is parseable.</p>
+    <div class="code-block">
+      <button class="copy-btn" data-copy="#manifest-out" aria-label="Copy manifest JSON"><svg class="ic"><use href="#i-copy"/></svg><span class="copy-lbl">Copy</span></button>
+      <pre id="manifest-out"></pre>
+    </div>
+  </section>
+
+</div>
+
+<script>
+"use strict";
+
+/* ---------- helpers ---------- */
+function esc(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/* ---------- status ---------- */
+var STATUS = {
+  exists:    { label: "exists (v1)", pill: "pill-success" },
+  prototype: { label: "prototype",   pill: "pill-failure" },
+  planned:   { label: "v2 target",   pill: "pill-info" }
+};
+
+/* ---------- node data (with layout coords) ---------- */
+var NODES = {
+  caller: {
+    name: "Caller apps", sub: "intake + internal tools", module: "callers (external)",
+    kind: "edge", status: "exists", x: 24, y: 44, w: 176, h: 72,
+    responsibility: "Internal JobEngine apps. They send business data and a client, poll for the result, and never touch credentials or browser infrastructure.",
+    invariants: ["Send POST /jobs with {useCase, client, input}", "Hold a per-caller token scoped to useCase-by-client pairs", "See one envelope shape for every job", "Automate on failure, alert on error"],
+    v1: "exists (callers integrate against the async API)"
+  },
+  admin: {
+    name: "Admin console", sub: "React 19 operators", module: "admin API + React / Vite",
+    kind: "edge", status: "planned", x: 24, y: 140, w: 176, h: 72,
+    responsibility: "The operator surface: browse the catalogue, watch jobs and replays, manage caller tokens and scopes, and review canary drift and cost. It talks only to the admin API.",
+    invariants: ["Reads through the admin API; no direct database access", "Never displays secret values", "Every mutating action is audited"],
+    v1: "planned (visual contract: admin-console-v2.html)"
+  },
+  fastify: {
+    name: "Fastify API", sub: "auth, scopes, envelope", module: "src/gateway/server.ts",
+    kind: "internal", status: "prototype", x: 272, y: 64, w: 176, h: 108,
+    responsibility: "The HTTP front door. It verifies the caller token and scope, writes the job to Postgres, returns 202 immediately, and serves the envelope on poll.",
+    invariants: ["Bearer auth; scopes are useCase-by-client", "202 {jobId} on accept; work runs async", "Ownership checked on GET /jobs/:id", "Every outcome wrapped in the stable envelope"],
+    v1: "prototype (node:http today; Fastify + pino in v2)"
+  },
+  postgres: {
+    name: "Postgres", sub: "jobs, catalogue, audit", module: "job store + queue table",
+    kind: "internal", status: "prototype", x: 272, y: 204, w: 176, h: 76,
+    responsibility: "Durable job store, catalogue snapshot, and audit trail. It replaces the v1 in-memory map so replicas share state and jobs survive restarts.",
+    invariants: ["Job state advances to DONE only after the envelope is written", "PII redacted from stored logs and audit rows", "Additive schema changes only"],
+    v1: "prototype (in-memory map today; Postgres / Supabase in v2)"
+  },
+  queue: {
+    name: "Queue", sub: "caps + deadlines", module: "skip-locked worker pool",
+    kind: "internal", status: "planned", x: 272, y: 336, w: 176, h: 76,
+    responsibility: "Pulls claimable jobs with SELECT ... FOR UPDATE SKIP LOCKED, enforcing global and per-platform concurrency caps and a per-run wall-clock deadline.",
+    invariants: ["Global and per-platform concurrency caps", "Per-run deadline; no unbounded fire-and-forget", "Jobs sharing a login are serialized"],
+    v1: "planned (no queue in v1; Browserbase caps unguarded)"
+  },
+  runner: {
+    name: "Runner", sub: "resolve + normalize", module: "src/gateway/runner.ts",
+    kind: "internal", status: "prototype", x: 272, y: 468, w: 176, h: 76,
+    responsibility: "Runs one job end to end: resolve the action, validate input, merge the client override, resolve credentials, invoke the agent, and map the outcome to an envelope.",
+    invariants: ["extractSchema never merges; the output shape is fixed", "Credentials resolved single-flight, never logged", "Read-only enforced by a method allowlist, not prompt text"],
+    v1: "prototype (single-tenant today; client dimension added in v2)"
+  },
+  canary: {
+    name: "Canary scheduler", sub: "drift detection", module: "scheduled per platform.client",
+    kind: "internal", status: "planned", x: 500, y: 64, w: 178, h: 76,
+    responsibility: "Runs a known-record job per platform.client on a schedule, compares the result to a baseline, and raises drift when a login breaks or a label moves.",
+    invariants: ["One canary per platform.client pair", "Alerts on login failure or layout drift", "Feeds cost tracking and health"],
+    v1: "planned (new in v2)"
+  },
+  agent: {
+    name: "Agent core", sub: "plan / observe / act loop", module: "src/loop.ts, src/index.ts",
+    kind: "internal", status: "exists", x: 500, y: 468, w: 178, h: 76,
+    responsibility: "The generic ReAct loop: plan with the LLM, observe the page, classify against the method allowlist, act, and extract to the locked schema. Redaction lives here.",
+    invariants: ["Secrets never enter an LLM prompt", "Match verification required before extraction", "runAgent never throws for operational failures"],
+    v1: "exists (working generic agent in src/)"
+  },
+  llm: {
+    name: "LLM planner", sub: "plans, never sees secrets", module: "src/planner.ts",
+    kind: "external", status: "exists", x: 756, y: 204, w: 180, h: 76,
+    responsibility: "The planning model. It proposes the next step from the observed page and variable names. It sees variable names, never their values.",
+    invariants: ["Sees variable names, never credential values", "No PII beyond the caller's own input", "Read-only intent; destructive steps blocked in code"],
+    v1: "exists (planner via extract in v1)"
+  },
+  onepassword: {
+    name: "1Password", sub: "JIT credentials", module: "src/gateway/secrets.ts -> op",
+    kind: "external", status: "exists", x: 756, y: 336, w: 180, h: 76,
+    responsibility: "Vault-scoped secret storage. One vault per domain, one login item per platform.client, one service account token per vault. Credentials are read just in time.",
+    invariants: ["The service account token is the only long-lived secret", "op read fetches username, password, and TOTP per run", "TOTP codes are never cached", "No browser extension inside cloud sessions"],
+    v1: "exists (op read in v1; 1Password SDK in v2)"
+  },
+  browserbase: {
+    name: "Browserbase", sub: "remote browsers", module: "src/browser.ts (Stagehand v3)",
+    kind: "external", status: "exists", x: 756, y: 468, w: 180, h: 76,
+    responsibility: "Remote cloud browsers driven by Stagehand v3. The container ships no Chromium; every session runs here and returns a replay URL.",
+    invariants: ["Session id and replay URL captured on every job", "Concurrency capped by plan; the queue guards it", "Contexts are a fast path with a JIT login fallback"],
+    v1: "exists (self-hosted Stagehand on Browserbase)"
+  }
+};
+var NODE_ORDER = ["caller", "admin", "fastify", "postgres", "queue", "runner", "canary", "agent", "llm", "onepassword", "browserbase"];
+
+/* ---------- lifecycle ---------- */
+var LIFECYCLE = [
+  { t: "Submit and scope check", what: "A caller POSTs {useCase, client, input} with its bearer token. Fastify verifies the token hash and checks the caller holds the useCase-by-client scope, then writes the job to Postgres and returns 202 {jobId}.", wrong: "Missing, expired, or wrong-scope token. The request is rejected before any work is scheduled.", code: "AUTH_REQUIRED", codeNote: "" },
+  { t: "Resolve the action", what: "getEntry(useCase) looks up the platform and action in the catalogue. An unknown key fails fast; nothing downstream runs.", wrong: "Unknown useCase. Rejected at the boundary; no browser session is opened.", code: "-", codeNote: "Rejected at validation, not a browser error code" },
+  { t: "Validate the input", what: "The action's zod inputSchema checks the caller data, including variant enums like milestone: NTP | PTO | Install | Permit. Bad input never reaches a browser.", wrong: "Input fails schema validation: missing field or bad enum value. Returned as a 400 at the boundary.", code: "-", codeNote: "Rejected at validation, not a browser error code" },
+  { t: "Merge the client override", what: "If the client carries a navigation override for this action (labelMap, startUrl, goalHints, timeout) it merges over the base. The extractSchema never merges; the output contract is fixed.", wrong: "Override references an unknown client, or tries to reach a field the schema forbids. Caught before the run; the answer shape can never change.", code: "-", codeNote: "Config error, caught before the run" },
+  { t: "Resolve credentials", what: "secrets.ts resolves op://vault/platform.client single-flight, so concurrent jobs share one fetch. Username, password, and a fresh TOTP are read per run. TOTP is never cached.", wrong: "Vault miss, missing item, or a token without vault access. No usable credentials means the job cannot proceed.", code: "AUTH_REQUIRED", codeNote: "" },
+  { t: "Build the goal", what: "buildGoal(input) merges business data and the variant into the instruction text; override hints and label mappings are appended for this client's layout. Deterministic, and no secrets.", wrong: "Nothing external happens here. A malformed goal is a code defect caught in tests, not a runtime error code.", code: "-", codeNote: "Deterministic; no runtime error code" },
+  { t: "Launch the browser session", what: "The runner opens a Stagehand session on a Browserbase remote browser and navigates to the start page. The session id and replay URL are captured for the envelope, and the deadline arms here.", wrong: "The session will not start or the start page is unreachable.", code: "NAVIGATION_ERROR", codeNote: "TIMEOUT if the session never becomes ready" },
+  { t: "Log in as the client", what: "Credentials are injected as Stagehand variables and typed into the login form, including the TOTP if present. They are never part of any LLM prompt and are redacted in logs.", wrong: "Bad credentials, a rejected OTP, or a changed login form. The session cannot authenticate.", code: "LOGIN_FAILED", codeNote: "" },
+  { t: "Execute and verify match", what: "The agent runs the read-only goal: search the record, verify name AND address both correspond, then read the requested field using this client's labels. Extraction follows the locked extractSchema.", wrong: "Search returns nothing, the record is absent, the match cannot be confirmed, or the field is missing. Distinct codes keep these separable.", code: "SEARCH_FAILED / RECORD_NOT_FOUND / MATCH_FAILED / FIELD_NOT_FOUND", codeNote: "TIMEOUT if the per-run deadline is hit" },
+  { t: "Deliver the envelope", what: "The runner maps the outcome to success, failure, or error, writes the envelope with client and credential item in meta, and only then advances the job to DONE. The caller polls GET /jobs/:id until then.", wrong: "Delivery is the terminal step. The job is never marked DONE until the envelope is durably written.", code: "-", codeNote: "success | failure | error, never conflated" }
+];
+
+/* ---------- error codes ---------- */
+var ERROR_CODES = [
+  ["AUTH_REQUIRED", "Token missing or invalid, wrong scope, or credentials could not be resolved."],
+  ["LOGIN_FAILED", "Reached the login form but could not authenticate (bad credentials or rejected OTP)."],
+  ["SEARCH_FAILED", "The search step could not run or returned an unusable result set."],
+  ["RECORD_NOT_FOUND", "No record exists for the given inputs."],
+  ["MATCH_FAILED", "A record was found but name and address did not both verify."],
+  ["FIELD_NOT_FOUND", "The requested field or label is absent on this layout."],
+  ["NAVIGATION_ERROR", "A page or session failed to load or respond."],
+  ["TIMEOUT", "The per-run deadline elapsed before the goal completed."]
+];
+
+/* ---------- domain merge demo ---------- */
+var BASE_FIELDS = [
+  ["key", "lightreach.milestoneStatus"],
+  ["startUrl", "https://palmetto.finance/accounts"],
+  ["requiresLogin", "true"],
+  ["timeout", "60000 ms"],
+  ["input", "{ name, address, milestone }"],
+  ["milestone", "NTP | PTO | Install | Permit"],
+  ["labelMap", "{}"],
+  ["goalHints", "(none)"]
+];
+var CLIENTS = {
+  lgcyco: { label: "lgcyco", note: "the base tenant. No override; runs the action exactly as defined.", overrides: {} },
+  brandx: { label: "brandx", note: "same site, renamed fields and a layout hint. Navigation only.", overrides: { labelMap: '{ "NTP Date": "Notice to Proceed Date" }', goalHints: "Status fields live in the right-hand rail." } },
+  voltic: { label: "voltic", note: "a whitelabel domain. Only the start URL differs.", overrides: { startUrl: "https://voltic.palmetto.finance/accounts" } },
+  northstar: { label: "northstar", note: "a slower two-step search flow with a longer deadline.", overrides: { timeout: "90000 ms", goalHints: "Two-step search: enter name, then confirm address." } }
+};
+
+/* ---------- pure builders ---------- */
+function nodeDetailHTML(id) {
+  var n = NODES[id];
+  if (!n) return "";
+  var st = STATUS[n.status];
+  var inv = n.invariants.map(function (i) { return "<li>" + esc(i) + "</li>"; }).join("");
+  var kindLabel = n.kind === "external" ? "external service" : (n.kind === "edge" ? "boundary" : "gateway module");
+  return "" +
+    '<div class="dp-head">' +
+      '<div><h3>' + esc(n.name) + '</h3><div class="dp-sub">' + esc(kindLabel) + " &middot; " + esc(n.sub) + "</div></div>" +
+      '<span class="pill ' + st.pill + '"><span class="dot"></span>' + esc(st.label) + "</span>" +
+    "</div>" +
+    '<p class="dp-resp">' + esc(n.responsibility) + "</p>" +
+    '<div class="dp-grid">' +
+      '<div><div class="dp-lbl">Key invariants</div><ul class="ticks">' + inv + "</ul></div>" +
+      '<div><div class="dp-lbl">Source</div><div class="dp-mono">' + esc(n.module) + "</div>" +
+        '<div class="dp-lbl" style="margin-top:16px">v1 status</div><div class="txt2 sm">' + esc(n.v1) + "</div></div>" +
+    "</div>";
+}
+
+function stepDetailHTML(i) {
+  var s = LIFECYCLE[i];
+  if (!s) return "";
+  var codeBlock;
+  if (s.code === "-") {
+    codeBlock = '<div class="dp-lbl" style="margin-top:16px">Failure code</div>' +
+      '<div class="note" style="margin-top:6px"><svg class="ic"><use href="#i-check"/></svg><span>' + esc(s.codeNote || "No browser error code at this step.") + "</span></div>";
+  } else {
+    var codes = s.code.split(" / ").map(function (c) { return '<span class="tag tag-code">' + esc(c.trim()) + "</span>"; }).join("");
+    codeBlock = '<div class="dp-lbl" style="margin-top:16px">Failure code</div>' +
+      '<div class="wrap-chips" style="margin-top:6px">' + codes + "</div>" +
+      (s.codeNote ? '<div class="txt2 xs" style="margin-top:8px">' + esc(s.codeNote) + "</div>" : "");
+  }
+  return "" +
+    '<div class="step-count">Step ' + (i + 1) + " of " + LIFECYCLE.length + "</div>" +
+    "<h3>" + esc(s.t) + "</h3>" +
+    '<div class="dp-lbl" style="margin-top:16px">What happens</div>' +
+    '<p class="dp-resp">' + esc(s.what) + "</p>" +
+    '<div class="dp-lbl">What can go wrong</div>' +
+    '<p class="dp-resp">' + esc(s.wrong) + "</p>" +
+    codeBlock;
+}
+
+function effectiveModel(clientId) {
+  var c = CLIENTS[clientId];
+  return BASE_FIELDS.map(function (pair) {
+    var k = pair[0], v = pair[1];
+    var has = Object.prototype.hasOwnProperty.call(c.overrides, k);
+    return { k: k, base: v, val: has ? c.overrides[k] : v, changed: has };
+  });
+}
+
+/* ---------- DOM wiring (browser only) ---------- */
+function initApp() {
+  var doc = document;
+
+  /* map */
+  var mapWrap = doc.getElementById("map-nodes");
+  NODE_ORDER.forEach(function (id) {
+    var n = NODES[id];
+    var b = doc.createElement("button");
+    b.type = "button";
+    b.className = "map-node kind-" + n.kind + (n.status === "planned" ? " target" : "");
+    b.style.left = n.x + "px";
+    b.style.top = n.y + "px";
+    b.style.width = n.w + "px";
+    b.style.height = n.h + "px";
+    b.setAttribute("data-node", id);
+    b.setAttribute("aria-label", n.name + " - " + STATUS[n.status].label);
+    b.innerHTML = '<span class="mn-t">' + esc(n.name) + '</span><span class="mn-s">' + esc(n.sub) + "</span>";
+    b.addEventListener("click", function () { selectNode(id); });
+    mapWrap.appendChild(b);
+  });
+  function selectNode(id) {
+    var nodes = doc.querySelectorAll("#map-nodes .map-node");
+    for (var i = 0; i < nodes.length; i++) {
+      nodes[i].classList.toggle("selected", nodes[i].getAttribute("data-node") === id);
+    }
+    doc.getElementById("node-detail").innerHTML = nodeDetailHTML(id);
+  }
+  selectNode("fastify");
+
+  /* lifecycle */
+  var curStep = 0;
+  var stepList = doc.getElementById("step-list");
+  LIFECYCLE.forEach(function (s, i) {
+    var b = doc.createElement("button");
+    b.type = "button";
+    b.className = "step-btn";
+    b.setAttribute("data-step", String(i));
+    b.setAttribute("role", "listitem");
+    b.innerHTML = '<span class="step-num">' + (i + 1) + '</span><span class="st1">' + esc(s.t) + "</span>";
+    b.addEventListener("click", function () { selectStep(i); });
+    stepList.appendChild(b);
+  });
+  function selectStep(i) {
+    curStep = Math.max(0, Math.min(LIFECYCLE.length - 1, i));
+    var btns = doc.querySelectorAll("#step-list .step-btn");
+    for (var k = 0; k < btns.length; k++) {
+      btns[k].classList.toggle("on", k === curStep);
+      btns[k].classList.toggle("done", k < curStep);
+    }
+    doc.getElementById("step-detail").innerHTML = stepDetailHTML(curStep);
+    doc.getElementById("step-prev").disabled = curStep === 0;
+    doc.getElementById("step-next").disabled = curStep === LIFECYCLE.length - 1;
+  }
+  doc.getElementById("step-prev").addEventListener("click", function () { selectStep(curStep - 1); });
+  doc.getElementById("step-next").addEventListener("click", function () { selectStep(curStep + 1); });
+  doc.getElementById("panel-lifecycle").addEventListener("keydown", function (e) {
+    if (e.key === "ArrowRight") { e.preventDefault(); selectStep(curStep + 1); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); selectStep(curStep - 1); }
+  });
+  selectStep(0);
+
+  /* error table */
+  var erows = doc.getElementById("error-rows");
+  erows.innerHTML = ERROR_CODES.map(function (r) {
+    return '<tr><td><span class="tag tag-code">' + esc(r[0]) + "</span></td><td>" + esc(r[1]) + "</td></tr>";
+  }).join("");
+
+  /* domain merge demo */
+  var chipWrap = doc.getElementById("client-chips");
+  Object.keys(CLIENTS).forEach(function (id) {
+    var b = doc.createElement("button");
+    b.type = "button";
+    b.className = "chip-btn";
+    b.setAttribute("data-client", id);
+    b.textContent = CLIENTS[id].label;
+    b.addEventListener("click", function () { renderMerge(id); });
+    chipWrap.appendChild(b);
+  });
+  function renderMerge(id) {
+    var chips = doc.querySelectorAll("#client-chips .chip-btn");
+    for (var i = 0; i < chips.length; i++) {
+      chips[i].classList.toggle("on", chips[i].getAttribute("data-client") === id);
+    }
+    var c = CLIENTS[id];
+    doc.getElementById("client-note").textContent = c.label + ": " + c.note;
+    var ov = doc.getElementById("override-out");
+    var keys = Object.keys(c.overrides);
+    if (!keys.length) {
+      ov.innerHTML = '<div class="cfg-line muted">No override. Runs the base action as defined.</div>';
+    } else {
+      ov.innerHTML = keys.map(function (k) {
+        return '<div class="cfg-line add"><span class="cfg-k">' + esc(k) + '</span><span class="cfg-v">' + esc(c.overrides[k]) + "</span></div>";
+      }).join("");
+    }
+    doc.getElementById("eff-out").innerHTML = effectiveModel(id).map(function (f) {
+      return '<div class="cfg-line' + (f.changed ? " add" : "") + '"><span class="cfg-k">' + esc(f.k) + '</span><span class="cfg-v">' + esc(f.val) + "</span></div>";
+    }).join("");
+  }
+  renderMerge("lgcyco");
+
+  /* manifest */
+  var mEl = doc.getElementById("gateway-manifest");
+  var mOut = doc.getElementById("manifest-out");
+  if (mEl && mOut) mOut.textContent = mEl.textContent.trim();
+
+  /* copy buttons */
+  function flashCopied(btn) {
+    btn.classList.add("copied");
+    var use = btn.querySelector("use");
+    var prev = use ? use.getAttribute("href") : null;
+    if (use) use.setAttribute("href", "#i-check");
+    var lbl = btn.querySelector(".copy-lbl");
+    var prevTxt = lbl ? lbl.textContent : null;
+    if (lbl) lbl.textContent = "Copied";
+    setTimeout(function () {
+      btn.classList.remove("copied");
+      if (use && prev) use.setAttribute("href", prev);
+      if (lbl && prevTxt != null) lbl.textContent = prevTxt;
+    }, 1400);
+  }
+  function fallbackCopy(text, done) {
+    var ta = doc.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    doc.body.appendChild(ta);
+    ta.select();
+    try { doc.execCommand("copy"); } catch (e) { /* ignore */ }
+    doc.body.removeChild(ta);
+    if (done) done();
+  }
+  var copyBtns = doc.querySelectorAll("[data-copy]");
+  for (var ci = 0; ci < copyBtns.length; ci++) {
+    (function (btn) {
+      btn.addEventListener("click", function () {
+        var target = doc.querySelector(btn.getAttribute("data-copy"));
+        var text = target ? target.textContent : "";
+        var done = function () { flashCopied(btn); };
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done).catch(function () { fallbackCopy(text, done); });
+          } else {
+            fallbackCopy(text, done);
+          }
+        } catch (e) {
+          fallbackCopy(text, done);
+        }
+      });
+    })(copyBtns[ci]);
+  }
+
+  /* tabs + hash routing */
+  var ROUTES = ["map", "lifecycle", "domain", "credentials", "api", "onboarding", "agents"];
+  function routeFromHash() {
+    var h = (location.hash || "").replace(/^#\/?/, "");
+    return ROUTES.indexOf(h) !== -1 ? h : "map";
+  }
+  function activate(route) {
+    var tabs = doc.querySelectorAll("#tabbar [role=tab]");
+    for (var i = 0; i < tabs.length; i++) {
+      var on = tabs[i].getAttribute("data-route") === route;
+      tabs[i].classList.toggle("active", on);
+      tabs[i].setAttribute("aria-selected", on ? "true" : "false");
+      tabs[i].tabIndex = on ? 0 : -1;
+    }
+    var panels = doc.querySelectorAll(".panel");
+    for (var j = 0; j < panels.length; j++) {
+      panels[j].classList.toggle("active", panels[j].id === "panel-" + route);
+    }
+  }
+  var tabEls = Array.prototype.slice.call(doc.querySelectorAll("#tabbar [role=tab]"));
+  tabEls.forEach(function (t, i) {
+    t.addEventListener("click", function () { location.hash = "#/" + t.getAttribute("data-route"); });
+    t.addEventListener("keydown", function (e) {
+      var idx = null;
+      if (e.key === "ArrowRight") idx = (i + 1) % tabEls.length;
+      else if (e.key === "ArrowLeft") idx = (i - 1 + tabEls.length) % tabEls.length;
+      else if (e.key === "Home") idx = 0;
+      else if (e.key === "End") idx = tabEls.length - 1;
+      if (idx != null) {
+        e.preventDefault();
+        tabEls[idx].focus();
+        location.hash = "#/" + tabEls[idx].getAttribute("data-route");
+      }
+    });
+  });
+  window.addEventListener("hashchange", function () { activate(routeFromHash()); });
+  if (!location.hash) location.hash = "#/map";
+  activate(routeFromHash());
+}
+
+if (typeof document !== "undefined" && document.getElementById) {
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initApp);
+  } else {
+    initApp();
+  }
+}
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = { NODES: NODES, NODE_ORDER: NODE_ORDER, LIFECYCLE: LIFECYCLE, ERROR_CODES: ERROR_CODES, CLIENTS: CLIENTS, BASE_FIELDS: BASE_FIELDS, STATUS: STATUS, esc: esc, nodeDetailHTML: nodeDetailHTML, stepDetailHTML: stepDetailHTML, effectiveModel: effectiveModel };
+}
+</script>
+</body>
+</html>
