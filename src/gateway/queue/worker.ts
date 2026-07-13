@@ -15,6 +15,8 @@ export interface QueueConfig {
   sweepIntervalMs: number;
   /** Total attempts a job may consume before its error envelope is final. */
   maxAttempts: number;
+  /** Cost accounting: USD per agent step; 0 disables the estimate. */
+  costPerStepUsd: number;
 }
 
 export const DEFAULT_QUEUE_CONFIG: QueueConfig = {
@@ -24,6 +26,7 @@ export const DEFAULT_QUEUE_CONFIG: QueueConfig = {
   pollIntervalMs: 500,
   sweepIntervalMs: 10_000,
   maxAttempts: 2,
+  costPerStepUsd: 0,
 };
 
 /** Error codes worth a retry: transient system problems, not deterministic outcomes. */
@@ -75,7 +78,14 @@ export function createQueueWorker(deps: QueueWorkerDeps) {
     }
     // attempts in the envelope reflects the store's count, not runner guesses.
     envelope.meta.attempts = job.attempts;
-    await store.complete(job.id, envelope);
+    const stepsUsed = envelope.meta.stepsUsed;
+    await store.complete(job.id, envelope, {
+      stepsUsed,
+      costUsd:
+        stepsUsed !== undefined && config.costPerStepUsd > 0
+          ? Number((stepsUsed * config.costPerStepUsd).toFixed(4))
+          : undefined,
+    });
     log.info({ jobId: job.id, status: envelope.status, attempts: job.attempts }, "job done");
   }
 

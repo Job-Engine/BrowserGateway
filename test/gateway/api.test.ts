@@ -3,6 +3,7 @@ import { createTestDb, type TestDb } from "./helpers/testdb.js";
 import { createJobStore, type JobStore } from "../../src/gateway/jobs/store.js";
 import { createAuthStore } from "../../src/gateway/auth/tokens.js";
 import { createLogger } from "../../src/gateway/observability/logger.js";
+import { createRegistry } from "../../src/gateway/registry.js";
 import { buildApp, type App } from "../../src/gateway/api/app.js";
 
 let db: TestDb;
@@ -10,6 +11,7 @@ let app: App;
 let store: JobStore;
 let scopedToken: string;
 let otherToken: string;
+let lgcycoToken: string;
 let adminToken: string;
 
 const goodInput = { name: "Jane Homeowner", address: "123 Solar Way, Austin TX 78701" };
@@ -18,10 +20,19 @@ beforeAll(async () => {
   db = await createTestDb();
   store = createJobStore(db.pool);
   const auth = createAuthStore(db.pool);
+  const registry = createRegistry(db.pool);
+  await registry.seed();
+  // Force the pairs this suite submits against to live (the lifecycle flow
+  // itself is covered in registry.test.ts).
+  await db.pool.query(
+    `update action_clients set state = 'live'
+     where use_case = 'lightreach.ntpDate' and client in ('default', 'brandx')`,
+  );
   scopedToken = (await auth.issueToken("app-scoped", ["lightreach.ntpDate:default"])).token;
   otherToken = (await auth.issueToken("app-other", ["lightreach.ntpDate:default"])).token;
+  lgcycoToken = (await auth.issueToken("app-lgcyco", ["lightreach.ntpDate:lgcyco"])).token;
   adminToken = (await auth.issueToken("ops-admin", ["*:*"], { isAdmin: true })).token;
-  app = buildApp({ store, auth, logger: createLogger("silent") });
+  app = buildApp({ store, auth, logger: createLogger("silent"), registry });
   await app.ready();
 });
 
@@ -131,6 +142,17 @@ describe("POST /jobs", () => {
     expect(row?.client).toBe("brandx");
   });
 
+  it("OPS: 403s a scoped caller whose pair is not live (first-live-run rule)", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/jobs",
+      headers: authed(lgcycoToken),
+      payload: { useCase: "lightreach.ntpDate", client: "lgcyco", input: goodInput },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error).toContain("not live");
+  });
+
   it("WL: 400s a client that is not on the action's roster", async () => {
     const res = await app.inject({
       method: "POST",
@@ -214,5 +236,73 @@ describe("GET /jobs/:id ownership (S1)", () => {
       headers: authed(scopedToken),
     });
     expect(res.statusCode).toBe(404);
+  });
+});
+
+describe("GET /openapi.json and admin surface", () => {
+  it("serves the OpenAPI document without auth and with the closed error enum", async () => {
+    const res = await app.inject({ method: "GET", url: "/openapi.json" });
+    expect(res.statusCode).toBe(200);
+    const doc = res.json();
+    expect(doc.paths["/jobs"]).toBeDefined();
+    expect(doc.components.schemas.JobEnvelope.properties.error.properties.code.enum).toContain(
+      "MATCH_FAILED",
+    );
+    // No issued secret ever appears in the public document.
+    for (const token of [scopedToken, adminToken]) {
+      expect(JSON.stringify(doc)).not.toContain(token.slice(4));
+    }
+  });
+
+  it("blocks non-admin callers from every /admin route", async () => {
+    for (const url of ["/admin/stats", "/admin/jobs", "/admin/catalogue", "/admin/audit"]) {
+      const res = await app.inject({ method: "GET", url, headers: authed(scopedToken) });
+      expect(res.statusCode).toBe(403);
+    }
+  });
+
+  it("admin can issue a scoped token whose plaintext appears exactly once", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/admin/tokens",
+      headers: authed(adminToken),
+      payload: { name: "new-app", scopes: ["lightreach.ntpDate:default"] },
+    });
+    expect(res.statusCode).toBe(201);
+    const { token, caller } = res.json();
+    expect(token).toMatch(/^bgw_/);
+    const list = await app.inject({
+      method: "GET",
+      url: "/admin/tokens",
+      headers: authed(adminToken),
+    });
+    const listed = list.json().callers.find((c: { id: string }) => c.id === caller.id);
+    expect(listed.name).toBe("new-app");
+    expect(JSON.stringify(listed)).not.toContain(token);
+    // The new token works for its scope.
+    const submit = await app.inject({
+      method: "POST",
+      url: "/jobs",
+      headers: authed(token),
+      payload: { useCase: "lightreach.ntpDate", input: goodInput },
+    });
+    expect(submit.statusCode).toBe(202);
+  });
+
+  it("admin catalogue lists lifecycle state per pair", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/admin/catalogue",
+      headers: authed(adminToken),
+    });
+    expect(res.statusCode).toBe(200);
+    const pairs = res.json().pairs;
+    const live = pairs.find(
+      (p: { useCase: string; client: string }) =>
+        p.useCase === "lightreach.ntpDate" && p.client === "default",
+    );
+    expect(live.clientState).toBe("live");
+    const disabled = pairs.find((p: { client: string }) => p.client === "lgcyco");
+    expect(disabled.clientState).toBe("disabled");
   });
 });

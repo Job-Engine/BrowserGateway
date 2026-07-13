@@ -15,6 +15,8 @@ export interface JobMeta {
   ranAt: string;
   durationMs: number;
   attempts: number;
+  /** Agent loop steps consumed; feeds cost accounting. Additive. */
+  stepsUsed?: number;
 }
 
 export interface JobEnvelope {

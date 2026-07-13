@@ -9,6 +9,10 @@ import type { AuthStore, Caller } from "../auth/tokens.js";
 import { hasScope } from "../auth/tokens.js";
 import type { JobStore } from "../jobs/store.js";
 import type { Logger } from "../observability/logger.js";
+import type { Registry } from "../registry.js";
+import type { CanaryScheduler } from "../canary/scheduler.js";
+import { registerAdminRoutes } from "./admin.js";
+import { buildOpenApiDocument } from "./openapi.js";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -20,6 +24,8 @@ export interface AppDeps {
   store: JobStore;
   auth: AuthStore;
   logger: Logger;
+  registry: Registry;
+  canary?: CanaryScheduler;
 }
 
 const submitJobSchema = z.object({
@@ -38,9 +44,12 @@ export function buildApp(deps: AppDeps) {
 
   app.get("/health", async () => ({ ok: true }));
 
+  // Self-description for humans and agents; carries no secrets.
+  app.get("/openapi.json", async () => buildOpenApiDocument());
+
   // Everything below requires a valid caller token.
   app.addHook("onRequest", async (req, reply) => {
-    if (req.url === "/health") return;
+    if (req.url === "/health" || req.url === "/openapi.json") return;
     const header = req.headers.authorization;
     const token = header?.startsWith("Bearer ") ? header.slice("Bearer ".length) : undefined;
     const caller = await deps.auth.verifyToken(token);
@@ -92,6 +101,14 @@ export function buildApp(deps: AppDeps) {
       return reply.code(400).send({ error: e instanceof Error ? e.message : String(e) });
     }
 
+    // Lifecycle gate (first-live-run rule): only live pairs serve caller
+    // traffic. Admin callers may submit test runs against any pair.
+    if (!req.caller.isAdmin && !(await deps.registry.isLive(useCase, client))) {
+      return reply.code(403).send({
+        error: `action-client pair ${useCase}:${client} is not live; a passing test run must be recorded and the pair enabled first`,
+      });
+    }
+
     const inputParsed = action.inputSchema.safeParse(input);
     if (!inputParsed.success) {
       return reply.code(400).send({
@@ -126,6 +143,10 @@ export function buildApp(deps: AppDeps) {
     if (!job) return reply.code(404).send({ error: "job not found" });
     return { jobId: job.id, state: job.state, envelope: job.envelope ?? undefined };
   });
+
+  // Cast: the admin routes are logger-type agnostic; Fastify's generics are
+  // over-specific about the pino instance.
+  registerAdminRoutes(app as unknown as Parameters<typeof registerAdminRoutes>[0], deps);
 
   return app;
 }

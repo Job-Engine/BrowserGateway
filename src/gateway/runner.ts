@@ -40,6 +40,7 @@ export async function runJob(
     error?: JobError;
     sessionUrl?: string;
     sessionId?: string;
+    stepsUsed?: number;
   }): JobEnvelope => ({
     jobId,
     useCase: action.useCase,
@@ -53,6 +54,7 @@ export async function runJob(
       ranAt,
       durationMs: Date.now() - startedAt,
       attempts: 1,
+      stepsUsed: extra?.stepsUsed,
     },
   });
 
@@ -109,6 +111,7 @@ export async function runJob(
       status: "error",
       sessionUrl,
       sessionId,
+      stepsUsed: result.stepsUsed,
       error: { code: "RUN_ERROR", message: result.error?.message ?? result.summary },
     });
   }
@@ -117,6 +120,7 @@ export async function runJob(
       status: "error",
       sessionUrl,
       sessionId,
+      stepsUsed: result.stepsUsed,
       error: { code: "TIMEOUT", message: "The run exceeded its wall-clock timeout." },
     });
   }
@@ -125,6 +129,7 @@ export async function runJob(
       status: "error",
       sessionUrl,
       sessionId,
+      stepsUsed: result.stepsUsed,
       error: {
         code: "ACTION_BLOCKED",
         message: "An action outside the read-only method allowlist was blocked.",
@@ -140,6 +145,7 @@ export async function runJob(
       status: "failure",
       sessionUrl,
       sessionId,
+      stepsUsed: result.stepsUsed,
       data: extracted,
       error: {
         code: "MATCH_FAILED",
@@ -153,6 +159,7 @@ export async function runJob(
       status: "failure",
       sessionUrl,
       sessionId,
+      stepsUsed: result.stepsUsed,
       data: extracted,
       error: {
         code: "NTP_FIELD_NOT_FOUND",
@@ -166,6 +173,7 @@ export async function runJob(
     status: result.success ? "success" : "failure",
     sessionUrl,
     sessionId,
+    stepsUsed: result.stepsUsed,
     data: extracted,
     error: result.success ? undefined : { code: "GOAL_NOT_COMPLETED", message: result.summary },
   });

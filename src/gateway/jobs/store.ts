@@ -159,13 +159,30 @@ export function createJobStore(pool: pg.Pool) {
     },
 
     /** Advance to DONE with the envelope, atomically. Returns false if the job was not RUNNING. */
-    async complete(id: string, envelope: JobEnvelope): Promise<boolean> {
+    async complete(
+      id: string,
+      envelope: JobEnvelope,
+      extras: { stepsUsed?: number; costUsd?: number } = {},
+    ): Promise<boolean> {
       const res = await pool.query(
-        `update jobs set state = 'DONE', envelope = $2, finished_at = now()
+        `update jobs set state = 'DONE', envelope = $2, finished_at = now(),
+                         steps_used = $3, cost_usd = $4
          where id = $1 and state = 'RUNNING'`,
-        [id, JSON.stringify(envelope)],
+        [id, JSON.stringify(envelope), extras.stepsUsed ?? null, extras.costUsd ?? null],
       );
       return res.rowCount === 1;
+    },
+
+    /** Admin listing, newest first. */
+    async list(opts: { state?: JobState; limit?: number } = {}): Promise<JobRow[]> {
+      const limit = opts.limit ?? 50;
+      const res = opts.state
+        ? await pool.query(
+            `select * from jobs where state = $1 order by created_at desc limit $2`,
+            [opts.state, limit],
+          )
+        : await pool.query(`select * from jobs order by created_at desc limit $1`, [limit]);
+      return res.rows.map(rowToJob);
     },
 
     /** Put a RUNNING job back in the queue (retry path). */

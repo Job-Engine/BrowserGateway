@@ -70,6 +70,21 @@ export function createAuthStore(pool: pg.Pool) {
     async disable(callerId: string): Promise<void> {
       await pool.query(`update callers set disabled = true where id = $1`, [callerId]);
     },
+
+    /** Admin listing; token hashes never leave the database. */
+    async listCallers(): Promise<Array<Caller & { disabled: boolean; createdAt: string }>> {
+      const res = await pool.query(
+        `select id, name, scopes, is_admin, disabled, created_at from callers order by created_at`,
+      );
+      return res.rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        scopes: r.scopes,
+        isAdmin: r.is_admin,
+        disabled: r.disabled,
+        createdAt: r.created_at.toISOString(),
+      }));
+    },
   };
 }
 
