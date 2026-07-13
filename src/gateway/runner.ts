@@ -88,7 +88,7 @@ export async function runJob(
     }
   }
 
-  // 3. Drive the browser (self-hosted Stagehand via the web-action-agent loop).
+  // 3. Drive the browser (self-hosted Stagehand via the agent core loop).
   //    Read-only is enforced in code: only allowlisted act methods may run (S3).
   //    M1: the OTP step follows the resolved credential, not any input field.
   const result = await runAgent({

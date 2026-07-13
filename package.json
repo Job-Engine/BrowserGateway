@@ -1,7 +1,7 @@
 {
-  "name": "web-action-agent",
+  "name": "browser-automation-gateway",
   "version": "0.1.0",
-  "description": "Autonomous web action agent: drives Browserbase via Stagehand to complete natural-language goals on arbitrary sites with per-action human confirmation.",
+  "description": "API access to web portals that have no API, via LLM-driven cloud browsers",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

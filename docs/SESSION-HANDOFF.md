@@ -216,3 +216,17 @@ Container: `docker build -t bb-gateway . && docker run --rm -p 8080:8080 -e OP_S
 - No em dashes. Be concise. No emojis unless asked.
 - Never expose internal secrets or credentials in logs or responses.
 - Save deliverables to the `Browserbase` workspace folder.
+
+## 2026-07-13: v2 build executed
+
+The two-phase process ran end to end in one session. Baseline of the v1
+prototype committed; main fast-forwarded; work on feat/gateway-v2. STAB, MVP,
+WL, OPS epics shipped with tests (116+, coverage gate 80 percent on
+src/gateway); Phase 1 spec (32 stories) committed locally in
+product-ops-planning on branch browser-automation-gateway-spec, not pushed
+pending review. Decisions of note: simplification 2 from the review (collapse
+the plan+observe double LLM call) deferred because it conflicts with the
+locked four-sanctioned-core-changes rule; cost tracking (stepsUsed) now
+measures whether it is worth reopening. Remaining: first live LightReach run
+(blocked on credentials in .env), admin console (CON), spec push, two-client
+live validation. See CLAUDE.md "Outstanding".
