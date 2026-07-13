@@ -20,10 +20,17 @@ export interface CatalogueEntry<I extends z.ZodTypeAny = z.ZodTypeAny> {
    * Builds the natural-language goal. Reference values as %placeholders%:
    * credentials (%username%, %password%, %otp%) and input keys (%name%, ...)
    * are all available as Stagehand variables and are never sent to the LLM.
+   * ctx.hasOtp reflects the resolved credential: mention %otp% only when the
+   * login item actually carries a one-time password (M1).
    */
-  buildGoal: (input: Record<string, unknown>) => string;
+  buildGoal: (input: Record<string, unknown>, ctx: GoalContext) => string;
   /** Whether this portal requires a login step. */
   requiresLogin: boolean;
+}
+
+export interface GoalContext {
+  /** True when the resolved credential includes a TOTP field. */
+  hasOtp: boolean;
 }
 
 const lightreachInput = z.object({
@@ -48,15 +55,23 @@ export const CATALOGUE: Record<string, CatalogueEntry> = {
     inputSchema: lightreachInput,
     extractSchema: lightreachExtract,
     requiresLogin: true,
-    buildGoal: (input) =>
+    // Procedure folded from the retired hosted-agent spec (docs/lightreach-ntp-agent.md).
+    buildGoal: (input, ctx) =>
       [
-        "If not already logged in, log in using %username% and %password%",
-        input.projectId ? " (and %otp% if a one-time code is requested)." : ".",
-        " Then search for the customer by name and open the matching account.",
-        " Before reading anything, VERIFY the match: the record's customer name AND service address must both correspond to %name% and %address%.",
-        " On a verified record, read the NTP Date field exactly as shown.",
-        " Do not modify, submit, or change anything; this is read-only.",
-      ].join(""),
+        "You are looking up ONE customer record in the LightReach / Palmetto financing portal and reading its NTP Date.",
+        "This is read-only: do not modify, submit, save, delete, or change anything; never click buttons that alter data.",
+        ctx.hasOtp
+          ? "If not already logged in, log in using %username% and %password%, entering %otp% when a one-time code is requested."
+          : "If not already logged in, log in using %username% and %password%.",
+        input.projectId
+          ? "Search for the customer by name %name%; the account/project ID %projectId% may help disambiguate."
+          : "Search for the customer by name %name%.",
+        "Open the matching record. Before trusting it, VERIFY the match: the record's customer name AND service address must both correspond to %name% and %address%.",
+        "Minor formatting differences (case, abbreviations like St vs Street, unit spacing) are acceptable; a different person or a different street address is NOT a match.",
+        "If no confident name and address match is found, stop; do not read fields from a record you could not verify.",
+        'On a verified record, locate the "NTP Date" field and read its value exactly as shown.',
+        "If the field exists but is blank, treat the value as null and note it; if the field cannot be found, report that explicitly.",
+      ].join(" "),
   },
 };
 

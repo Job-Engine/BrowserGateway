@@ -81,7 +81,7 @@ Two truths coexist in this repo; do not confuse them.
 
 **Target (v2):** defined authoritatively in `BrowserGateway/architecture-review-2.0.docx` (findings, target modules, build order) and kicked off by `BrowserGateway/claude-code-instructions.md` (two-phase: spec in the product-ops-planning repo, then build). Visual contracts: `BrowserGateway/admin-console-v2.html` (admin console) and `BrowserGateway/architecture-explorer-v2.html` (system explainer). v2 adds: the client dimension, Fastify API, Postgres job store and queue with concurrency caps and deadlines, per-caller scoped tokens, pino logging, canaries, cost tracking, admin API, React 19 console.
 
-Known v1 defects an agent must not replicate: TOTP cached past its 30s life, unbounded fire-and-forget job spawning with no wall-clock timeout, unbounded in-memory job map, no ownership check on `GET /jobs/:id`, OTP goal text gated on the unrelated `projectId` field, `op` subprocess inheriting the full env. The hosted-agent path (`src/lightreachAgent.ts`, `examples/lightreach-server.ts`) is scheduled for deletion; do not extend it.
+Fixed in STAB (do not regress): TOTP is never cached (username/password keep a 60s cache); the OTP goal step follows the resolved credential having an OTP field, not `projectId`; the `op` subprocess gets a minimal env (`OP_SERVICE_ACCOUNT_TOKEN`, `HOME`, `PATH`). The hosted-agent path (`src/lightreachAgent.ts`, `examples/lightreach-server.ts`) is deleted; self-hosted Stagehand is the only path. Remaining v1 defects an agent must not replicate: unbounded fire-and-forget job spawning with no wall-clock timeout, unbounded in-memory job map, no ownership check on `GET /jobs/:id`.
 
 ## File map
 

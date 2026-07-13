@@ -83,9 +83,10 @@ export async function runJob(
   // 3. Drive the browser (self-hosted Stagehand via the web-action-agent loop).
   //    autoApprove: headless service, so risky steps (login submit) are auto-approved.
   //    The catalogue goals are read-only after login; tighten per-entry if needed.
+  //    M1: the OTP step follows the resolved credential, not any input field.
   const result = await runAgent({
     url: entry.url,
-    goal: entry.buildGoal(input),
+    goal: entry.buildGoal(input, { hasOtp: Boolean(credentials.otp) }),
     data: input,
     credentials,
     extractSchema: entry.extractSchema,

@@ -28,7 +28,9 @@ export interface PortalCredentials {
 }
 
 interface CacheEntry {
-  value: PortalCredentials;
+  // C1: only the static parts of a login are ever cached. The TOTP rotates
+  // every 30s and is resolved fresh on every call.
+  value: { username: string; password: string };
   expires: number;
 }
 
@@ -40,10 +42,20 @@ function vault(): string {
   return process.env.OP_PORTALS_VAULT ?? "Portals";
 }
 
+// M2: the op child gets only what it needs; the process's other secrets
+// (Browserbase, Anthropic keys) must never reach a subprocess.
+function minimalOpEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const key of ["OP_SERVICE_ACCOUNT_TOKEN", "HOME", "PATH"]) {
+    const value = process.env[key];
+    if (value !== undefined) env[key] = value;
+  }
+  return env;
+}
+
 async function opRead(reference: string): Promise<string> {
-  // OP_SERVICE_ACCOUNT_TOKEN is read from the environment by `op` automatically.
   const { stdout } = await execFileAsync("op", ["read", reference], {
-    env: process.env,
+    env: minimalOpEnv(),
     maxBuffer: 1024 * 1024,
   });
   return stdout.trim();
@@ -64,27 +76,9 @@ export async function resolvePortalCredentials(
   portalKey: string,
   opts: { withOtp?: boolean } = {},
 ): Promise<PortalCredentials> {
-  const cached = cache.get(portalKey);
-  if (cached && cached.expires > Date.now()) return cached.value;
-
   // Prefer 1Password; fall back to env vars only when op is not configured.
-  let creds: PortalCredentials;
   const hasOp = Boolean(process.env.OP_SERVICE_ACCOUNT_TOKEN);
-  if (hasOp) {
-    const base = `op://${vault()}/${portalKey}`;
-    const [username, password] = await Promise.all([
-      opRead(`${base}/username`),
-      opRead(`${base}/password`),
-    ]);
-    creds = { username, password };
-    if (opts.withOtp) {
-      try {
-        creds.otp = await opRead(`${base}/one-time password?attribute=otp`);
-      } catch {
-        // No OTP field on this item; that's fine.
-      }
-    }
-  } else {
+  if (!hasOp) {
     const fb = envFallback(portalKey);
     if (!fb) {
       throw new Error(
@@ -92,10 +86,33 @@ export async function resolvePortalCredentials(
           `or PORTAL_${portalKey.toUpperCase()}_USERNAME / _PASSWORD for local testing.`,
       );
     }
-    creds = fb;
+    if (!opts.withOtp) return { username: fb.username, password: fb.password };
+    return fb;
   }
 
-  cache.set(portalKey, { value: creds, expires: Date.now() + CACHE_TTL_MS });
+  const base = `op://${vault()}/${portalKey}`;
+  let staticCreds: { username: string; password: string };
+  const cached = cache.get(portalKey);
+  if (cached && cached.expires > Date.now()) {
+    staticCreds = cached.value;
+  } else {
+    const [username, password] = await Promise.all([
+      opRead(`${base}/username`),
+      opRead(`${base}/password`),
+    ]);
+    staticCreds = { username, password };
+    cache.set(portalKey, { value: staticCreds, expires: Date.now() + CACHE_TTL_MS });
+  }
+
+  const creds: PortalCredentials = { ...staticCreds };
+  if (opts.withOtp) {
+    // C1: never cached; a TOTP older than its 30s window fails the login.
+    try {
+      creds.otp = await opRead(`${base}/one-time password?attribute=otp`);
+    } catch {
+      // No OTP field on this item; that's fine.
+    }
+  }
   return creds;
 }
 
