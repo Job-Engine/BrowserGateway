@@ -10,7 +10,10 @@ export function createPool(databaseUrl = process.env.DATABASE_URL): pg.Pool {
   if (!databaseUrl) {
     throw new Error("DATABASE_URL is not set");
   }
-  return new pg.Pool({ connectionString: databaseUrl, max: 10 });
+  const pool = new pg.Pool({ connectionString: databaseUrl, max: 10 });
+  // An idle client dropped by the server must not crash the process.
+  pool.on("error", () => {});
+  return pool;
 }
 
 /**

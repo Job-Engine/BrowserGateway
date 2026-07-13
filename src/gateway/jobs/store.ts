@@ -126,6 +126,11 @@ export function createJobStore(pool: pg.Pool) {
                and (select n from total) < $1
                and coalesce((select n from running r where r.platform = j.platform), 0)
                    < coalesce(($2::jsonb ->> j.platform)::int, $3)
+               -- WL: one login per platform.client credential at a time
+               and not exists (
+                 select 1 from jobs r2
+                 where r2.state = 'RUNNING' and r2.platform = j.platform and r2.client = j.client
+               )
              order by j.created_at
              for update skip locked
              limit 1

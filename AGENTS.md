@@ -75,13 +75,11 @@ The Browser Automation Gateway is JobEngine's internal service that gives applic
 
 ## Current state vs target state
 
-Two truths coexist in this repo; do not confuse them.
+**Current (v2 build in progress):** `src/` is the agent core (BrowserAgent port, ReAct loop, redaction, Stagehand adapter) with the four sanctioned v2 changes applied: `sessionId` exposed from the adapter, `timeoutMs` wall-clock budget on `runAgent`, one free re-plan on observe failure, and `allowedMethods` enforcing read-only in code. `src/gateway/` is the v2 shell: Fastify API (body limits, per-caller hashed scoped tokens, fail closed, ownership-checked job reads), Postgres job store and FOR UPDATE SKIP LOCKED queue (global, per-platform caps, per-credential serialization, deadlines, sweep), pino with PII redaction, single-flight JIT secrets keyed by `platform.client` credential item, catalogue with per-client navigation-only overrides. Run locally: `docker compose up -d`, set `DATABASE_URL` and `GATEWAY_DEV_TOKEN`, `npm run gateway`.
 
-**Current (v1 prototype):** `src/` is a working generic agent (BrowserAgent port, ReAct loop, redaction, Stagehand adapter) and `src/gateway/` is a single-tenant prototype: one portal, no `client` dimension, in-memory job store, shared static token, no queue, no tests on the gateway layer. `docs/browser-automation-gateway.md` describes this layer but is one version ahead of the code in places.
+Epic status: STAB done, MVP done, WL done (live per-client validation pending credentials); OPS (canaries, cost, DB catalogue, lifecycle, admin API, openapi.json) and CON (React console) in progress. The first live LightReach run has NOT happened; the catalogue's field labels and login flow are still assumptions.
 
-**Target (v2):** defined authoritatively in `BrowserGateway/architecture-review-2.0.docx` (findings, target modules, build order) and kicked off by `BrowserGateway/claude-code-instructions.md` (two-phase: spec in the product-ops-planning repo, then build). Visual contracts: `BrowserGateway/admin-console-v2.html` (admin console) and `BrowserGateway/architecture-explorer-v2.html` (system explainer). v2 adds: the client dimension, Fastify API, Postgres job store and queue with concurrency caps and deadlines, per-caller scoped tokens, pino logging, canaries, cost tracking, admin API, React 19 console.
-
-Fixed in STAB (do not regress): TOTP is never cached (username/password keep a 60s cache); the OTP goal step follows the resolved credential having an OTP field, not `projectId`; the `op` subprocess gets a minimal env (`OP_SERVICE_ACCOUNT_TOKEN`, `HOME`, `PATH`). The hosted-agent path (`src/lightreachAgent.ts`, `examples/lightreach-server.ts`) is deleted; self-hosted Stagehand is the only path. Remaining v1 defects an agent must not replicate: unbounded fire-and-forget job spawning with no wall-clock timeout, unbounded in-memory job map, no ownership check on `GET /jobs/:id`.
+Fixed and locked in (do not regress): TOTP never cached (username/password keep a 60s cache); OTP goal step follows the resolved credential, not `projectId`; the `op` subprocess gets a minimal env (`OP_SERVICE_ACCOUNT_TOKEN`, `HOME`, `PATH`); jobs are durable with wall-clock deadlines; `GET /jobs/:id` is ownership-scoped. The hosted-agent path is deleted; self-hosted Stagehand is the only path.
 
 ## File map
 

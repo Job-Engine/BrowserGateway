@@ -21,9 +21,9 @@ vi.mock("../../src/index.js", () => ({
 }));
 
 import { runJob } from "../../src/gateway/runner.js";
-import { getEntry } from "../../src/gateway/catalogue.js";
+import { resolveAction } from "../../src/gateway/catalogue.js";
 
-const entry = getEntry("lightreach.ntpDate");
+const entry = resolveAction("lightreach.ntpDate", "default");
 const input = { name: "Jane Homeowner", address: "123 Solar Way, Austin TX 78701" };
 
 function agentSuccess(extracted: Record<string, unknown>) {
@@ -73,6 +73,28 @@ describe("runJob OTP wiring (M1)", () => {
   });
 });
 
+describe("runJob whitelabel wiring (WL)", () => {
+  beforeEach(() => {
+    mocks.resolvePortalCredentials.mockResolvedValue({ username: "u", password: "p" });
+  });
+
+  it("resolves the platform.client credential item and echoes client in the envelope", async () => {
+    const action = resolveAction("lightreach.ntpDate", "lgcyco");
+    const envelope = await runJob("job-wl", action, input);
+    expect(mocks.resolvePortalCredentials).toHaveBeenCalledWith("lightreach.lgcyco", {
+      withOtp: true,
+    });
+    expect(envelope.client).toBe("lgcyco");
+    expect(envelope.useCase).toBe("lightreach.ntpDate");
+  });
+
+  it("passes the client timeout override through to runAgent", async () => {
+    const action = { ...resolveAction("lightreach.ntpDate", "lgcyco"), timeoutMs: 45_000 };
+    await runJob("job-wl-2", action, input);
+    expect(mocks.runAgent.mock.calls[0][0].timeoutMs).toBe(45_000);
+  });
+});
+
 describe("runJob envelope mapping", () => {
   beforeEach(() => {
     mocks.resolvePortalCredentials.mockResolvedValue({ username: "u", password: "p" });
@@ -81,6 +103,7 @@ describe("runJob envelope mapping", () => {
   it("maps a verified extraction to success with session metadata", async () => {
     const envelope = await runJob("job-3", entry, input);
     expect(envelope.status).toBe("success");
+    expect(envelope.client).toBe("default");
     expect(envelope.meta.sessionId).toBe("abc-123");
     expect(envelope.meta.sessionReplayUrl).toContain("sessions/abc-123");
   });

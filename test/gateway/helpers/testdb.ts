@@ -28,6 +28,10 @@ export async function createTestDb(): Promise<TestDb> {
   const url = new URL(ADMIN_URL);
   url.pathname = `/${name}`;
   const pool = new pg.Pool({ connectionString: url.toString(), max: 5 });
+  // The force-drop at teardown may kill a straggling idle client; that must
+  // not surface as an unhandled error event.
+  pool.on("error", () => {});
+  admin.on("error", () => {});
   await migrate(pool);
   return {
     pool,

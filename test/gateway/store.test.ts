@@ -80,6 +80,8 @@ describe("job store (C3)", () => {
     expect(claimed).not.toBeNull();
     expect(claimed?.state).toBe("RUNNING");
     expect(claimed?.attempts).toBe(1);
+    // Release the credential so later tests can claim (WL serialization).
+    await store.complete(claimed!.id, envelope(claimed!.id));
   });
 
   it("advances to DONE only from RUNNING and only with an envelope", async () => {
@@ -138,6 +140,25 @@ describe("queue caps (C2)", () => {
     expect(second?.platform).toBe("otherportal");
     const third = await s.claimNext(caps);
     expect(third).toBeNull();
+    await dbx.teardown();
+  });
+
+  it("WL: serializes runs per platform.client credential", async () => {
+    const dbx = await createTestDb();
+    const s = createJobStore(dbx.pool);
+    const auth = createAuthStore(dbx.pool);
+    const caller = (await auth.issueToken("serial-caller", ["*:*"])).caller.id;
+    await s.enqueue(enqueueParams({ callerId: caller, client: "lgcyco" }));
+    await s.enqueue(enqueueParams({ callerId: caller, client: "lgcyco" }));
+    await s.enqueue(enqueueParams({ callerId: caller, client: "brandx" }));
+    const first = await s.claimNext(claimDefaults);
+    expect(first?.client).toBe("lgcyco");
+    const second = await s.claimNext(claimDefaults);
+    // Same credential is busy; the other client's job runs instead.
+    expect(second?.client).toBe("brandx");
+    expect(await s.claimNext(claimDefaults)).toBeNull();
+    await s.complete(first!.id, envelope(first!.id));
+    expect((await s.claimNext(claimDefaults))?.client).toBe("lgcyco");
     await dbx.teardown();
   });
 

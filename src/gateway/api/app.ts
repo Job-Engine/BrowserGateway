@@ -4,7 +4,7 @@
 // the OPS epic.
 import Fastify from "fastify";
 import { z } from "zod";
-import { CATALOGUE, getEntry } from "../catalogue.js";
+import { CATALOGUE, getEntry, resolveAction } from "../catalogue.js";
 import type { AuthStore, Caller } from "../auth/tokens.js";
 import { hasScope } from "../auth/tokens.js";
 import type { JobStore } from "../jobs/store.js";
@@ -54,6 +54,7 @@ export function buildApp(deps: AppDeps) {
     const actions = Object.values(CATALOGUE).map((entry) => ({
       useCase: entry.useCase,
       platform: entry.portalKey,
+      clients: ["default", ...Object.keys(entry.clients ?? {})],
       inputSchema: z.toJSONSchema(entry.inputSchema),
       extractSchema: z.toJSONSchema(entry.extractSchema),
       requiresLogin: entry.requiresLogin,
@@ -73,9 +74,8 @@ export function buildApp(deps: AppDeps) {
     }
     const { useCase, client, input, idempotencyKey } = parsed.data;
 
-    let entry;
     try {
-      entry = getEntry(useCase);
+      getEntry(useCase);
     } catch (e) {
       return reply.code(400).send({ error: e instanceof Error ? e.message : String(e) });
     }
@@ -84,7 +84,15 @@ export function buildApp(deps: AppDeps) {
       return reply.code(403).send({ error: "token is not scoped for this useCase and client" });
     }
 
-    const inputParsed = entry.inputSchema.safeParse(input);
+    // WL: the client must be on the action's roster ("default" always is).
+    let action;
+    try {
+      action = resolveAction(useCase, client);
+    } catch (e) {
+      return reply.code(400).send({ error: e instanceof Error ? e.message : String(e) });
+    }
+
+    const inputParsed = action.inputSchema.safeParse(input);
     if (!inputParsed.success) {
       return reply.code(400).send({
         error: "invalid input",
@@ -95,7 +103,7 @@ export function buildApp(deps: AppDeps) {
     const { job, deduplicated } = await deps.store.enqueue({
       useCase,
       client,
-      platform: entry.portalKey,
+      platform: action.portalKey,
       input: inputParsed.data,
       callerId: req.caller.id,
       idempotencyKey,

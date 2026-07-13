@@ -8,7 +8,7 @@ import { createJobStore } from "./jobs/store.js";
 import { createAuthStore, hashToken } from "./auth/tokens.js";
 import { buildApp } from "./api/app.js";
 import { createQueueWorker } from "./queue/worker.js";
-import { getEntry } from "./catalogue.js";
+import { resolveAction } from "./catalogue.js";
 import { runJob } from "./runner.js";
 
 function intEnv(name: string, fallback: number): number {
@@ -41,7 +41,7 @@ export async function main(): Promise<void> {
   const queue = createQueueWorker({
     store,
     logger,
-    execute: (job) => runJob(job.id, getEntry(job.useCase), job.input),
+    execute: (job) => runJob(job.id, resolveAction(job.useCase, job.client), job.input),
     config: {
       globalCap: intEnv("GATEWAY_GLOBAL_CAP", 3),
       defaultPlatformCap: intEnv("GATEWAY_PLATFORM_CAP", 2),

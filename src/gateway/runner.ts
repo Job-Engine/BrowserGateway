@@ -1,10 +1,10 @@
 import { runAgent } from "../index.js";
 import { READ_ONLY_METHODS } from "../types.js";
-import type { CatalogueEntry } from "./catalogue.js";
+import type { ResolvedAction } from "./catalogue.js";
 import { resolvePortalCredentials } from "./secrets.js";
 import type { JobEnvelope, JobError, JobStatus } from "./types.js";
 
-/** Hard per-run wall-clock budget until per-entry timeouts arrive with the v2 catalogue. */
+/** Default per-run wall-clock budget; a client override (timeoutMs) wins. */
 const RUN_TIMEOUT_MS = 300_000;
 
 function sessionIdFromUrl(url?: string): string | undefined {
@@ -28,7 +28,7 @@ function boolField(data: unknown, key: string): boolean | undefined {
  */
 export async function runJob(
   jobId: string,
-  entry: CatalogueEntry,
+  action: ResolvedAction,
   rawInput: unknown,
 ): Promise<JobEnvelope> {
   const startedAt = Date.now();
@@ -42,7 +42,8 @@ export async function runJob(
     sessionId?: string;
   }): JobEnvelope => ({
     jobId,
-    useCase: entry.useCase,
+    useCase: action.useCase,
+    client: action.client,
     status: extra?.status ?? "error",
     data: extra?.data,
     error: extra?.error,
@@ -56,7 +57,7 @@ export async function runJob(
   });
 
   // 1. Validate caller input.
-  const parsed = entry.inputSchema.safeParse(rawInput);
+  const parsed = action.inputSchema.safeParse(rawInput);
   if (!parsed.success) {
     return base({
       status: "error",
@@ -69,11 +70,12 @@ export async function runJob(
   }
   const input = parsed.data as Record<string, string>;
 
-  // 2. Resolve credentials just-in-time (never logged, redacted downstream).
+  // 2. Resolve this platform-and-client's credentials just in time (WL:
+  //    one 1Password item per platform.client pair).
   let credentials: Record<string, string> = {};
-  if (entry.requiresLogin) {
+  if (action.requiresLogin) {
     try {
-      const creds = await resolvePortalCredentials(entry.portalKey, { withOtp: true });
+      const creds = await resolvePortalCredentials(action.credentialItem, { withOtp: true });
       credentials = { username: creds.username, password: creds.password };
       if (creds.otp) credentials.otp = creds.otp;
     } catch (e) {
@@ -88,13 +90,13 @@ export async function runJob(
   //    Read-only is enforced in code: only allowlisted act methods may run (S3).
   //    M1: the OTP step follows the resolved credential, not any input field.
   const result = await runAgent({
-    url: entry.url,
-    goal: entry.buildGoal(input, { hasOtp: Boolean(credentials.otp) }),
+    url: action.url,
+    goal: action.buildGoal(input, { hasOtp: Boolean(credentials.otp) }),
     data: input,
     credentials,
-    extractSchema: entry.extractSchema,
+    extractSchema: action.extractSchema,
     allowedMethods: READ_ONLY_METHODS,
-    timeoutMs: RUN_TIMEOUT_MS,
+    timeoutMs: action.timeoutMs ?? RUN_TIMEOUT_MS,
   });
 
   const sessionUrl = result.sessionReplayUrl;

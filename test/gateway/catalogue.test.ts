@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { CATALOGUE, getEntry } from "../../src/gateway/catalogue.js";
+import { afterEach, describe, expect, it } from "vitest";
+import { CATALOGUE, getEntry, resolveAction } from "../../src/gateway/catalogue.js";
 
 /**
  * Catalogue tests: M1 (OTP goal text follows the credential, not projectId)
@@ -58,5 +58,63 @@ describe("catalogue shape", () => {
       expect(entry.url).toMatch(/^https:\/\//);
       expect(entry.useCase).toContain(".");
     }
+  });
+});
+
+describe("resolveAction (WL override merge)", () => {
+  afterEach(() => {
+    delete CATALOGUE["test.override"];
+  });
+
+  it("default client uses the bare portal credential item and base url", () => {
+    const action = resolveAction("lightreach.ntpDate", "default");
+    expect(action.credentialItem).toBe("lightreach");
+    expect(action.client).toBe("default");
+    expect(action.url).toBe(getEntry("lightreach.ntpDate").url);
+  });
+
+  it("a rostered client derives platform.client credential item", () => {
+    const action = resolveAction("lightreach.ntpDate", "lgcyco");
+    expect(action.credentialItem).toBe("lightreach.lgcyco");
+    expect(action.client).toBe("lgcyco");
+  });
+
+  it("rejects clients not on the roster", () => {
+    expect(() => resolveAction("lightreach.ntpDate", "ghost")).toThrow(/Unknown client/);
+  });
+
+  it("appends label mapping guidance to the goal without touching the base for others", () => {
+    const brandx = resolveAction("lightreach.ntpDate", "brandx");
+    const goal = brandx.buildGoal(input, { hasOtp: false });
+    expect(goal).toContain("Notice to Proceed");
+    const base = resolveAction("lightreach.ntpDate", "default").buildGoal(input, { hasOtp: false });
+    expect(base).not.toContain("Notice to Proceed");
+  });
+
+  it("never overrides the extract schema: the resolved schema is the base object", () => {
+    for (const client of ["default", "lgcyco", "brandx"]) {
+      const action = resolveAction("lightreach.ntpDate", client);
+      expect(action.extractSchema).toBe(getEntry("lightreach.ntpDate").extractSchema);
+    }
+  });
+
+  it("merges startUrl, goalHints, timeout, and explicit credentialItem", () => {
+    CATALOGUE["test.override"] = {
+      ...getEntry("lightreach.ntpDate"),
+      useCase: "test.override",
+      clients: {
+        special: {
+          credentialItem: "custom.item",
+          startUrl: "https://special.example.com/login",
+          goalHints: ["Use the sidebar search, not the top bar."],
+          timeoutMs: 120_000,
+        },
+      },
+    };
+    const action = resolveAction("test.override", "special");
+    expect(action.credentialItem).toBe("custom.item");
+    expect(action.url).toBe("https://special.example.com/login");
+    expect(action.timeoutMs).toBe(120_000);
+    expect(action.buildGoal(input, { hasOtp: false })).toContain("sidebar search");
   });
 });

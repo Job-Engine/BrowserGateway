@@ -119,6 +119,29 @@ describe("POST /jobs", () => {
     expect(res.statusCode).toBe(403);
   });
 
+  it("WL: accepts a rostered client with a wildcard scope and persists it", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/jobs",
+      headers: authed(adminToken),
+      payload: { useCase: "lightreach.ntpDate", client: "brandx", input: goodInput },
+    });
+    expect(res.statusCode).toBe(202);
+    const row = await store.get(res.json().jobId);
+    expect(row?.client).toBe("brandx");
+  });
+
+  it("WL: 400s a client that is not on the action's roster", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/jobs",
+      headers: authed(adminToken),
+      payload: { useCase: "lightreach.ntpDate", client: "ghost", input: goodInput },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toContain("Unknown client");
+  });
+
   it("400s unknown useCases and invalid input", async () => {
     const unknown = await app.inject({
       method: "POST",
