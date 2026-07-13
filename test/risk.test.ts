@@ -20,19 +20,27 @@ describe("classifyRisk", () => {
   });
 
   it("treats benign fills and clicks as safe", () => {
-    expect(classifyRisk({ description: "Type into the First name field", method: "fill" }).level).toBe("safe");
+    expect(
+      classifyRisk({ description: "Type into the First name field", method: "fill" }).level,
+    ).toBe("safe");
     expect(classifyRisk({ description: "Click the Next tab", method: "click" }).level).toBe("safe");
   });
 
   it("matches keywords found only in the instruction", () => {
-    expect(classifyRisk({ description: "Click element", instruction: "submit the application" }).level).toBe("risky");
+    expect(
+      classifyRisk({ description: "Click element", instruction: "submit the application" }).level,
+    ).toBe("risky");
   });
 
   it("honors a custom keyword list that replaces the defaults", () => {
     // "submit" is a default keyword but is NOT in the custom list -> safe
-    expect(classifyRisk({ description: "submit the form" }, { keywords: ["frobnicate"] }).level).toBe("safe");
+    expect(
+      classifyRisk({ description: "submit the form" }, { keywords: ["frobnicate"] }).level,
+    ).toBe("safe");
     // the custom keyword matches -> risky
-    expect(classifyRisk({ description: "frobnicate the widget" }, { keywords: ["frobnicate"] }).level).toBe("risky");
+    expect(
+      classifyRisk({ description: "frobnicate the widget" }, { keywords: ["frobnicate"] }).level,
+    ).toBe("risky");
     expect(DEFAULT_RISKY_KEYWORDS.length).toBeGreaterThan(0);
   });
 });

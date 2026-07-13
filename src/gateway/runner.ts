@@ -30,7 +30,13 @@ export async function runJob(
   const startedAt = Date.now();
   const ranAt = new Date(startedAt).toISOString();
 
-  const base = (extra?: { status: JobStatus; data?: unknown; error?: JobError; sessionUrl?: string; sessionId?: string }): JobEnvelope => ({
+  const base = (extra?: {
+    status: JobStatus;
+    data?: unknown;
+    error?: JobError;
+    sessionUrl?: string;
+    sessionId?: string;
+  }): JobEnvelope => ({
     jobId,
     useCase: entry.useCase,
     status: extra?.status ?? "error",
@@ -113,7 +119,11 @@ export async function runJob(
       status: "failure",
       sessionUrl,
       data: extracted,
-      error: { code: "MATCH_FAILED", message: "No record matched on name and address.", fields: ["name", "address"] },
+      error: {
+        code: "MATCH_FAILED",
+        message: "No record matched on name and address.",
+        fields: ["name", "address"],
+      },
     });
   }
   if (ntpDateFound === false) {
@@ -121,7 +131,11 @@ export async function runJob(
       status: "failure",
       sessionUrl,
       data: extracted,
-      error: { code: "NTP_FIELD_NOT_FOUND", message: "NTP Date field was not found on the record.", fields: ["ntpDate"] },
+      error: {
+        code: "NTP_FIELD_NOT_FOUND",
+        message: "NTP Date field was not found on the record.",
+        fields: ["ntpDate"],
+      },
     });
   }
 

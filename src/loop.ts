@@ -82,7 +82,10 @@ export async function runLoop(params: LoopParams): Promise<LoopResult> {
   const actionsLog: ActionRecord[] = [];
   let consecutiveFailures = 0;
 
-  const finalize = async (status: AgentStatus, error?: LoopResult["error"]): Promise<LoopResult> => {
+  const finalize = async (
+    status: AgentStatus,
+    error?: LoopResult["error"],
+  ): Promise<LoopResult> => {
     let extractedData: unknown;
     if (
       params.extractSchema &&
@@ -130,12 +133,11 @@ export async function runLoop(params: LoopParams): Promise<LoopResult> {
     if (signal?.aborted) return finalize("aborted");
     let observed: ObservedAction | null = null;
     for (let attempt = 0; attempt <= maxObserveRetries; attempt++) {
-      let candidates: ObservedAction[] = [];
+      let candidates: ObservedAction[];
       try {
         candidates = await agent.observe(plan.instruction, variables);
-      } catch (e) {
+      } catch {
         candidates = [];
-        void e;
       }
       if (candidates.length > 0) {
         observed = candidates[0];

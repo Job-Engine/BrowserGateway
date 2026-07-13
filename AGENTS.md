@@ -19,11 +19,23 @@ The Browser Automation Gateway is JobEngine's internal service that gives applic
     "client": "a whitelabel login identity on a platform; credential item op://<vault>/<platform>.<client>; may carry navigation-only overrides: labelMap, startUrl, goalHints, timeout",
     "job": "one request: {useCase: 'platform.action', client, input}; async, poll for result",
     "envelope": {
-      "jobId": "string", "useCase": "string", "client": "string",
+      "jobId": "string",
+      "useCase": "string",
+      "client": "string",
       "status": "success | failure | error",
       "data": "shaped by the action's extractSchema",
-      "error": { "code": "AUTH_REQUIRED | LOGIN_FAILED | SEARCH_FAILED | RECORD_NOT_FOUND | MATCH_FAILED | FIELD_NOT_FOUND | NAVIGATION_ERROR | TIMEOUT", "message": "sanitized" },
-      "meta": { "sessionId": "string", "sessionReplayUrl": "string", "credentialItem": "string", "ranAt": "iso", "durationMs": "number", "attempts": "number" }
+      "error": {
+        "code": "AUTH_REQUIRED | LOGIN_FAILED | SEARCH_FAILED | RECORD_NOT_FOUND | MATCH_FAILED | FIELD_NOT_FOUND | NAVIGATION_ERROR | TIMEOUT",
+        "message": "sanitized"
+      },
+      "meta": {
+        "sessionId": "string",
+        "sessionReplayUrl": "string",
+        "credentialItem": "string",
+        "ranAt": "iso",
+        "durationMs": "number",
+        "attempts": "number"
+      }
     },
     "statusSemantics": {
       "success": "goal met, record match verified, data extracted (a legitimately blank field still counts)",
@@ -73,21 +85,21 @@ Known v1 defects an agent must not replicate: TOTP cached past its 30s life, unb
 
 ## File map
 
-| Path | Role |
-|---|---|
-| `src/types.ts` | BrowserAgent port + core types; the seam that makes the loop testable |
-| `src/browser.ts` | Stagehand v3 adapter (Browserbase or local) |
-| `src/loop.ts` | The agent loop: plan, observe, classify, act, extract; redaction lives here |
-| `src/planner.ts` | LLM planning step (via extract); sees variable names, never values |
-| `src/risk.ts` | Risk keyword classifier (being replaced by a method allowlist in v2) |
-| `src/index.ts` | `runAgent()` entry; never throws for operational failures |
-| `src/gateway/catalogue.ts` | useCase registry: portal, url, schemas, buildGoal |
-| `src/gateway/secrets.ts` | JIT 1Password resolution, 60s cache, env fallback |
-| `src/gateway/runner.ts` | one job end to end: validate, creds, runAgent, envelope |
-| `src/gateway/server.ts` | HTTP surface (node:http in v1, Fastify in v2) |
-| `docs/browser-automation-gateway.md` | gateway reference (v1) |
-| `docs/SESSION-HANDOFF.md` | session context and decision history |
-| `BrowserGateway/` | planning artifacts: reviews, mockups, instructions, feature guide |
+| Path                                 | Role                                                                        |
+| ------------------------------------ | --------------------------------------------------------------------------- |
+| `src/types.ts`                       | BrowserAgent port + core types; the seam that makes the loop testable       |
+| `src/browser.ts`                     | Stagehand v3 adapter (Browserbase or local)                                 |
+| `src/loop.ts`                        | The agent loop: plan, observe, classify, act, extract; redaction lives here |
+| `src/planner.ts`                     | LLM planning step (via extract); sees variable names, never values          |
+| `src/risk.ts`                        | Risk keyword classifier (being replaced by a method allowlist in v2)        |
+| `src/index.ts`                       | `runAgent()` entry; never throws for operational failures                   |
+| `src/gateway/catalogue.ts`           | useCase registry: portal, url, schemas, buildGoal                           |
+| `src/gateway/secrets.ts`             | JIT 1Password resolution, 60s cache, env fallback                           |
+| `src/gateway/runner.ts`              | one job end to end: validate, creds, runAgent, envelope                     |
+| `src/gateway/server.ts`              | HTTP surface (node:http in v1, Fastify in v2)                               |
+| `docs/browser-automation-gateway.md` | gateway reference (v1)                                                      |
+| `docs/SESSION-HANDOFF.md`            | session context and decision history                                        |
+| `BrowserGateway/`                    | planning artifacts: reviews, mockups, instructions, feature guide           |
 
 ## Glossary
 

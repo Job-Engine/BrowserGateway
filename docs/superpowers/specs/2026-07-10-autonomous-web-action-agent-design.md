@@ -22,7 +22,7 @@ callbacks are observe-only and **cannot block a pending action**; the only inter
 whole-run `AbortSignal`. Therefore Stagehand's built-in agent **cannot honor a "pause and confirm
 before risky actions" hook**.
 
-The documented way to achieve true per-action approval is a loop *we* own, built on Stagehand's
+The documented way to achieve true per-action approval is a loop _we_ own, built on Stagehand's
 lower-level primitives: `observe()` returns a concrete candidate action **without executing it**,
 which we can classify, gate through a confirmation hook, and only then execute with `act()`. This
 design is the honest match for the chosen safety model.
@@ -30,6 +30,7 @@ design is the honest match for the chosen safety model.
 ## 2. Goals / Non-goals
 
 ### Goals (v1)
+
 - One embeddable async function `runAgent(options)` returning a structured `AgentRunResult`.
 - Works on arbitrary sites given `{ url, goal, data }` — plans and grounds each step live.
 - Per-action human-in-the-loop confirmation before risky/irreversible actions, via an
@@ -42,6 +43,7 @@ design is the honest match for the chosen safety model.
 - Real end-to-end verification via a local HTML fixture (Stagehand `env: "LOCAL"`).
 
 ### Non-goals (v1 — explicitly deferred)
+
 - HTTP API service / deployment (the library is designed to be wrappable later).
 - Multi-agent orchestration, chat UI, or a web front-end.
 - A hardcoded `agent()`-powered "fast lane" for fully autonomous runs.
@@ -142,6 +144,7 @@ declare const autoApprove: (action: ProposedAction) => true;
 ```
 
 ### Chosen defaults (agreed)
+
 - **No `onBeforeAction` → risky actions are BLOCKED** (fail-closed). The run ends `status: "blocked"`
   and reports the action it wanted to take. Callers opt into autonomy with `autoApprove` or an
   interactive hook.
@@ -185,24 +188,25 @@ finally:
 
 Each is small, single-purpose, and independently testable.
 
-| Module | Responsibility | Depends on | Testable via |
-| --- | --- | --- | --- |
-| `types.ts` | Shared types/interfaces. | — | (types only) |
-| `browser.ts` | Stagehand/Browserbase session lifecycle. `createSession(config)` → `{ stagehand, page, sessionReplayUrl, close() }`. Isolates all init (env, model, projectId via `browserbaseSessionCreateParams`, Context). | Stagehand | LOCAL env / integration |
-| `risk.ts` | **Pure** `classifyRisk(action, config)` → `RiskAssessment`. No I/O. | — | unit table |
-| `planner.ts` | LLM planning: `(goal, data, history, pageState)` → `{ instruction, isDone }`; and end-of-run `summarize(history)`. | LLM client | unit (mocked LLM) |
-| `loop.ts` | Orchestrates planner → observe → risk → confirm → act; builds `actionsLog`; emits `AgentEvent`s. | browser, risk, planner | integration (LOCAL) |
-| `extract.ts` | Optional final Zod-schema extraction. | Stagehand | integration (LOCAL) |
-| `index.ts` | `runAgent()` public entry: validate options, create session, run loop, assemble result, `finally` close. Never throws on operational failure (returns `status: "error"`); throws only on invalid options. | all | integration (LOCAL) |
-| `cli.ts` | Dev wrapper: parse args / JSON file, provide interactive terminal confirm as the default `onBeforeAction`, pretty-print result. Not the primary artifact. | index | manual |
+| Module       | Responsibility                                                                                                                                                                                                | Depends on             | Testable via            |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ----------------------- |
+| `types.ts`   | Shared types/interfaces.                                                                                                                                                                                      | —                      | (types only)            |
+| `browser.ts` | Stagehand/Browserbase session lifecycle. `createSession(config)` → `{ stagehand, page, sessionReplayUrl, close() }`. Isolates all init (env, model, projectId via `browserbaseSessionCreateParams`, Context). | Stagehand              | LOCAL env / integration |
+| `risk.ts`    | **Pure** `classifyRisk(action, config)` → `RiskAssessment`. No I/O.                                                                                                                                           | —                      | unit table              |
+| `planner.ts` | LLM planning: `(goal, data, history, pageState)` → `{ instruction, isDone }`; and end-of-run `summarize(history)`.                                                                                            | LLM client             | unit (mocked LLM)       |
+| `loop.ts`    | Orchestrates planner → observe → risk → confirm → act; builds `actionsLog`; emits `AgentEvent`s.                                                                                                              | browser, risk, planner | integration (LOCAL)     |
+| `extract.ts` | Optional final Zod-schema extraction.                                                                                                                                                                         | Stagehand              | integration (LOCAL)     |
+| `index.ts`   | `runAgent()` public entry: validate options, create session, run loop, assemble result, `finally` close. Never throws on operational failure (returns `status: "error"`); throws only on invalid options.     | all                    | integration (LOCAL)     |
+| `cli.ts`     | Dev wrapper: parse args / JSON file, provide interactive terminal confirm as the default `onBeforeAction`, pretty-print result. Not the primary artifact.                                                     | index                  | manual                  |
 
 ## 6. Risk classification (v1)
 
 Deterministic, best-effort heuristic over the observed `ProposedAction`:
+
 - **Method signal:** form submission or navigation-causing clicks.
 - **Keyword signal:** `description` (and mapped instruction) matches any of:
   `submit, send, pay, purchase, checkout, buy, order, delete, remove, post, publish, confirm,
-  apply, sign, agree, accept, transfer, book, reserve`.
+apply, sign, agree, accept, transfer, book, reserve`.
 - Any match → `level: "risky"` with a `reason`; otherwise `"safe"`.
 
 Documented as best-effort — the confirmation hook is the real safety net. Callers may override the
@@ -264,4 +268,7 @@ implementing `loop.ts`.
   it configurable, never hard-coded beyond the default constant.
 - **Session URL property** (`stagehand.browserbaseSessionURL`) — confirm exact property name against
   the `.d.ts`.
+
+```
+
 ```

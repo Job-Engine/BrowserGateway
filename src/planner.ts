@@ -9,10 +9,7 @@ export const planStepSchema = z.object({
 
 export type PlanStep = z.infer<typeof planStepSchema>;
 
-export type ExtractFn = <T>(
-  instruction: string,
-  schema: z.ZodType<T>,
-) => Promise<T>;
+export type ExtractFn = <T>(instruction: string, schema: z.ZodType<T>) => Promise<T>;
 
 export interface PlanContext {
   goal: string;
@@ -25,9 +22,7 @@ export function buildPlanPrompt(ctx: PlanContext): string {
     ? ctx.history
         .map(
           (h, i) =>
-            `${i + 1}. [${h.outcome}] ${h.action.description}${
-              h.message ? ` — ${h.message}` : ""
-            }`,
+            `${i + 1}. [${h.outcome}] ${h.action.description}${h.message ? ` — ${h.message}` : ""}`,
         )
         .join("\n")
     : "(no actions taken yet)";
@@ -47,13 +42,10 @@ export function buildPlanPrompt(ctx: PlanContext): string {
     "Respond with:",
     "- reasoning: a brief justification grounded in what is visible on the page.",
     "- isDone: true ONLY if the goal is fully accomplished; otherwise false.",
-    '- instruction: one concrete imperative UI action for the next step (e.g. \'click the "Next" button\', \'type %email% into the Email field\'). Use an empty string if isDone is true.',
+    "- instruction: one concrete imperative UI action for the next step (e.g. 'click the \"Next\" button', 'type %email% into the Email field'). Use an empty string if isDone is true.",
   ].join("\n");
 }
 
-export async function planNextStep(
-  extract: ExtractFn,
-  ctx: PlanContext,
-): Promise<PlanStep> {
+export async function planNextStep(extract: ExtractFn, ctx: PlanContext): Promise<PlanStep> {
   return extract(buildPlanPrompt(ctx), planStepSchema);
 }

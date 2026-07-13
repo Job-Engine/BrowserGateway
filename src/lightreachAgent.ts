@@ -25,20 +25,9 @@ export interface LightreachRecord {
 }
 
 /** Terminal + active run states from the Agents API. */
-export type RunStatus =
-  | "PENDING"
-  | "RUNNING"
-  | "COMPLETED"
-  | "FAILED"
-  | "STOPPED"
-  | "TIMED_OUT";
+export type RunStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED" | "STOPPED" | "TIMED_OUT";
 
-const TERMINAL: ReadonlySet<RunStatus> = new Set([
-  "COMPLETED",
-  "FAILED",
-  "STOPPED",
-  "TIMED_OUT",
-]);
+const TERMINAL: ReadonlySet<RunStatus> = new Set(["COMPLETED", "FAILED", "STOPPED", "TIMED_OUT"]);
 
 /** The structured output defined by the Agent's result schema. */
 export interface NtpResult {
@@ -114,7 +103,10 @@ export async function startNtpRun(
   record: LightreachRecord,
   config: RunConfig = {},
 ): Promise<{ runId: string; agentId: string }> {
-  const apiKey = requireEnv(config.apiKey ?? process.env.BROWSERBASE_API_KEY, "BROWSERBASE_API_KEY");
+  const apiKey = requireEnv(
+    config.apiKey ?? process.env.BROWSERBASE_API_KEY,
+    "BROWSERBASE_API_KEY",
+  );
   const agentId = requireEnv(config.agentId ?? process.env.BB_AGENT_ID, "BB_AGENT_ID");
 
   const task = [
@@ -134,10 +126,13 @@ export async function startNtpRun(
     address: { value: record.address, description: "Service address to verify the match" },
   };
   if (record.projectId) {
-    variables.projectId = { value: record.projectId, description: "Account/project ID to disambiguate" };
+    variables.projectId = {
+      value: record.projectId,
+      description: "Account/project ID to disambiguate",
+    };
   }
 
-  const body = await bbFetch("/agents/runs", apiKey, {
+  const body = (await bbFetch("/agents/runs", apiKey, {
     method: "POST",
     body: JSON.stringify({
       agentId,
@@ -148,14 +143,17 @@ export async function startNtpRun(
         ...(config.contextId ? { context: { id: config.contextId, persist: false } } : {}),
       },
     }),
-  }) as { runId: string; agentId?: string };
+  })) as { runId: string; agentId?: string };
 
   return { runId: body.runId, agentId: body.agentId ?? agentId };
 }
 
 /** Fetch a single run's current state. */
 export async function getRun(runId: string, config: RunConfig = {}): Promise<AgentRun> {
-  const apiKey = requireEnv(config.apiKey ?? process.env.BROWSERBASE_API_KEY, "BROWSERBASE_API_KEY");
+  const apiKey = requireEnv(
+    config.apiKey ?? process.env.BROWSERBASE_API_KEY,
+    "BROWSERBASE_API_KEY",
+  );
   return (await bbFetch(`/agents/runs/${runId}`, apiKey)) as AgentRun;
 }
 
@@ -170,7 +168,9 @@ export async function pollRun(runId: string, config: RunConfig = {}): Promise<Ag
     const run = await getRun(runId, config);
     if (TERMINAL.has(run.status)) return run;
     if (Date.now() >= deadline) {
-      throw new Error(`Run ${runId} did not finish within ${timeoutMs}ms (last status: ${run.status})`);
+      throw new Error(
+        `Run ${runId} did not finish within ${timeoutMs}ms (last status: ${run.status})`,
+      );
     }
     await new Promise((r) => setTimeout(r, pollIntervalMs));
   }

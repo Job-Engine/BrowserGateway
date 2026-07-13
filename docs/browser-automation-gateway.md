@@ -54,12 +54,12 @@ before wiring 1Password.
 
 ## API
 
-| Method | Path          | Body / result                                    |
-| ------ | ------------- | ------------------------------------------------ |
-| GET    | /health       | `{ ok: true }`                                   |
-| GET    | /catalogue    | `{ useCases: [...] }`                             |
-| POST   | /jobs         | `{ useCase, input }` → `202 { jobId, state }`    |
-| GET    | /jobs/:id     | `{ state, envelope? }`                            |
+| Method | Path       | Body / result                                 |
+| ------ | ---------- | --------------------------------------------- |
+| GET    | /health    | `{ ok: true }`                                |
+| GET    | /catalogue | `{ useCases: [...] }`                         |
+| POST   | /jobs      | `{ useCase, input }` → `202 { jobId, state }` |
+| GET    | /jobs/:id  | `{ state, envelope? }`                        |
 
 Set `GATEWAY_TOKEN` to require `authorization: Bearer <token>` from callers.
 
@@ -72,7 +72,13 @@ Set `GATEWAY_TOKEN` to require `authorization: Bearer <token>` from callers.
   "status": "success | failure | error",
   "data": { "ntpDate": "…", "matchVerified": true, "…": "…" },
   "error": { "code": "MATCH_FAILED", "message": "…", "fields": ["address"] },
-  "meta": { "sessionId": "…", "sessionReplayUrl": "…", "ranAt": "…", "durationMs": 0, "attempts": 1 }
+  "meta": {
+    "sessionId": "…",
+    "sessionReplayUrl": "…",
+    "ranAt": "…",
+    "durationMs": 0,
+    "attempts": 1
+  }
 }
 ```
 

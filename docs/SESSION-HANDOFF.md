@@ -103,7 +103,13 @@ catalogue entry + one 1Password login item.
   "status": "success | failure | error",
   "data": { "ntpDate": "…", "matchVerified": true },
   "error": { "code": "MATCH_FAILED", "message": "…", "fields": ["address"] },
-  "meta": { "sessionId": "…", "sessionReplayUrl": "…", "ranAt": "…", "durationMs": 0, "attempts": 1 }
+  "meta": {
+    "sessionId": "…",
+    "sessionReplayUrl": "…",
+    "ranAt": "…",
+    "durationMs": 0,
+    "attempts": 1
+  }
 }
 ```
 
@@ -115,6 +121,7 @@ missing field); `error` = system/auth/nav problem.
 ## 6. Files (all created/modified this session)
 
 Gateway (new, the main deliverable):
+
 - `src/gateway/types.ts` — JobEnvelope, JobStatus, JobRecord.
 - `src/gateway/catalogue.ts` — useCase registry; `lightreach.ntpDate` entry;
   `getEntry()`. Each entry: portalKey, url, inputSchema (zod), extractSchema,
@@ -130,11 +137,13 @@ Gateway (new, the main deliverable):
   Chromium (uses Browserbase remote browsers).
 
 Hosted-agent path (alternative/earlier work, still valid):
+
 - `src/lightreachAgent.ts` — REST client for the dashboard "Lightreach NTP Passed"
   agent (`startNtpRun`, `pollRun`, `getRun`, `runLightreachNtpCheck`).
 - `examples/lightreach-server.ts` — minimal backend endpoint wrapping that client.
 
 Config/docs:
+
 - `.env.example` — added PORT, GATEWAY_TOKEN, OP_SERVICE_ACCOUNT_TOKEN,
   OP_PORTALS_VAULT, PORTAL_* fallback.
 - `package.json` — added `"gateway": "tsx src/gateway/server.ts"`.

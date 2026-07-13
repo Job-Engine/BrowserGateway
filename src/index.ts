@@ -24,7 +24,10 @@ function validateOptions(options: RunAgentOptions): void {
   if (typeof options.goal !== "string" || options.goal.length === 0) {
     throw new TypeError("runAgent: 'goal' must be a non-empty string");
   }
-  if (options.maxSteps !== undefined && (!Number.isInteger(options.maxSteps) || options.maxSteps < 1)) {
+  if (
+    options.maxSteps !== undefined &&
+    (!Number.isInteger(options.maxSteps) || options.maxSteps < 1)
+  ) {
     throw new TypeError("runAgent: 'maxSteps' must be a positive integer");
   }
 }

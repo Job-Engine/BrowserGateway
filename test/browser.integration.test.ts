@@ -43,7 +43,11 @@ d("browser adapter + loop against a local form (real Stagehand)", () => {
   });
 
   it("fills the form and blocks the submit when the hook rejects it", async () => {
-    agent = await createSession({ env: "LOCAL", model: "anthropic/claude-sonnet-4-6", headless: true });
+    agent = await createSession({
+      env: "LOCAL",
+      model: "anthropic/claude-sonnet-4-6",
+      headless: true,
+    });
     const risky: ProposedAction[] = [];
     const res = await runLoop({
       ...loopBase,
@@ -59,7 +63,9 @@ d("browser adapter + loop against a local form (real Stagehand)", () => {
     });
 
     expect(res.status).toBe("blocked");
-    expect(risky.some((a) => /submit/i.test(a.description) || /submit/i.test(a.instruction))).toBe(true);
+    expect(risky.some((a) => /submit/i.test(a.description) || /submit/i.test(a.instruction))).toBe(
+      true,
+    );
     expect(res.actionsLog.some((r) => r.outcome === "executed")).toBe(true); // at least one field was filled
   });
 });

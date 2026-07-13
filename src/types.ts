@@ -33,12 +33,7 @@ export interface ActionRecord {
   message?: string;
 }
 
-export type AgentStatus =
-  | "completed"
-  | "blocked"
-  | "aborted"
-  | "max_steps"
-  | "error";
+export type AgentStatus = "completed" | "blocked" | "aborted" | "max_steps" | "error";
 
 export type AgentEvent =
   | { type: "step_start"; step: number }
@@ -49,9 +44,7 @@ export type AgentEvent =
   | { type: "acted"; step: number; outcome: ActionRecord["outcome"]; message?: string }
   | { type: "done"; status: AgentStatus };
 
-export type ConfirmFn = (
-  action: ProposedAction,
-) => boolean | Promise<boolean>;
+export type ConfirmFn = (action: ProposedAction) => boolean | Promise<boolean>;
 
 export interface RunAgentOptions {
   url: string;
@@ -86,14 +79,8 @@ export interface AgentRunResult {
 export interface BrowserAgent {
   readonly sessionReplayUrl?: string;
   goto(url: string): Promise<void>;
-  observe(
-    instruction: string,
-    variables?: Record<string, string>,
-  ): Promise<ObservedAction[]>;
-  act(
-    action: ObservedAction,
-    variables?: Record<string, string>,
-  ): Promise<ActOutcome>;
+  observe(instruction: string, variables?: Record<string, string>): Promise<ObservedAction[]>;
+  act(action: ObservedAction, variables?: Record<string, string>): Promise<ActOutcome>;
   extract<T>(instruction: string, schema: z.ZodType<T>): Promise<T>;
   close(): Promise<void>;
 }

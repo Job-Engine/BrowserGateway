@@ -29,11 +29,13 @@ You are an operations agent for the LightReach / Palmetto financing portal
 customer record and report its NTP Date.
 
 You will be given, in the session task, a customer record containing at minimum:
+
 - name (customer full name)
 - address (service/installation address)
-Optionally an account or project ID.
+  Optionally an account or project ID.
 
 Procedure:
+
 1. Go to https://palmetto.finance/accounts. If you are not logged in, complete
    the login using the provided credentials. If no credentials are available and
    login is required, stop and report an explicit AUTH_REQUIRED error.
@@ -51,6 +53,7 @@ Procedure:
    If the field cannot be found on the page, report an NTP_FIELD_NOT_FOUND error.
 
 Rules:
+
 - Do NOT modify, submit, save, delete, or change anything. This is read-only.
   Never click buttons that alter data.
 - Make every failure explicit: populate the errors array with a code, a
@@ -158,6 +161,7 @@ deploy. You "expose" it by calling the Agents REST API, and you call it from
 your app through a thin backend so your API key never reaches a client.
 
 Flow (runs are asynchronous):
+
 1. POST https://api.browserbase.com/v1/agents/runs with `{ agentId, task, variables }`
    returns a `runId`.
 2. GET https://api.browserbase.com/v1/agents/runs/{runId} until `status` is
@@ -168,11 +172,13 @@ Get the real `agentId` from the dashboard: open the agent and click
 "View Agent API" (the short `4ab3f2aa` in the Runs table is truncated).
 
 Env vars:
-- BROWSERBASE_API_KEY  (Dashboard > Settings)
-- BB_AGENT_ID          (the agent's UUID)
-- BB_CONTEXT_ID        (optional: a logged-in Context to skip login)
+
+- BROWSERBASE_API_KEY (Dashboard > Settings)
+- BB_AGENT_ID (the agent's UUID)
+- BB_CONTEXT_ID (optional: a logged-in Context to skip login)
 
 Code in this repo:
+
 - `src/lightreachAgent.ts` — `runLightreachNtpCheck(record)` plus `startNtpRun`
   / `pollRun` / `getRun`. Server-side only.
 - `examples/lightreach-server.ts` — a `POST /ntp-check` endpoint (node:http, no
@@ -200,6 +206,7 @@ curl https://api.browserbase.com/v1/agents/runs/$RUN_ID -H "x-bb-api-key: $BROWS
 ```
 
 Notes:
+
 - Login: the hosted Agent has no 1Password SDK call, so give it a logged-in
   Context (BB_CONTEXT_ID) or store credentials in the agent. See the credentials
   section above.

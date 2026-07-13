@@ -54,7 +54,10 @@ export async function createSession(config: CreateSessionConfig): Promise<Browse
     async goto(url: string) {
       await page.goto(url);
     },
-    async observe(instruction: string, variables?: Record<string, string>): Promise<ObservedAction[]> {
+    async observe(
+      instruction: string,
+      variables?: Record<string, string>,
+    ): Promise<ObservedAction[]> {
       const result = await stagehand.observe(instruction, variables ? { variables } : undefined);
       return result.map((a) => ({
         selector: a.selector,

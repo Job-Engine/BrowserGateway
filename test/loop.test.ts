@@ -108,7 +108,11 @@ describe("runLoop", () => {
   });
 
   it("stops with max_steps when the goal never completes", async () => {
-    const plans: PlanStep[] = Array.from({ length: 10 }, () => ({ reasoning: "", isDone: false, instruction: "click next" }));
+    const plans: PlanStep[] = Array.from({ length: 10 }, () => ({
+      reasoning: "",
+      isDone: false,
+      instruction: "click next",
+    }));
     const { agent } = makeFakeAgent({ plans });
     const res = await runLoop({ ...base, agent, maxSteps: 3 });
     expect(res.status).toBe("max_steps");
@@ -116,7 +120,9 @@ describe("runLoop", () => {
   });
 
   it("returns aborted when the signal is already aborted", async () => {
-    const { agent } = makeFakeAgent({ plans: [{ reasoning: "", isDone: false, instruction: "x" }] });
+    const { agent } = makeFakeAgent({
+      plans: [{ reasoning: "", isDone: false, instruction: "x" }],
+    });
     const res = await runLoop({ ...base, agent, signal: AbortSignal.abort() });
     expect(res.status).toBe("aborted");
   });
@@ -127,9 +133,21 @@ describe("runLoop", () => {
         { reasoning: "", isDone: false, instruction: "type the password" },
         { reasoning: "", isDone: true, instruction: "" },
       ],
-      observe: () => [{ selector: "x", description: "Fill password with hunter2", method: "fill", arguments: ["hunter2"] }],
+      observe: () => [
+        {
+          selector: "x",
+          description: "Fill password with hunter2",
+          method: "fill",
+          arguments: ["hunter2"],
+        },
+      ],
     });
-    const res = await runLoop({ ...base, agent, variables: { password: "hunter2" }, secretValues: ["hunter2"] });
+    const res = await runLoop({
+      ...base,
+      agent,
+      variables: { password: "hunter2" },
+      secretValues: ["hunter2"],
+    });
     const dump = JSON.stringify(res.actionsLog);
     expect(dump).not.toContain("hunter2");
     expect(dump).toContain("***");
@@ -140,7 +158,11 @@ describe("runLoop", () => {
       plans: [{ reasoning: "", isDone: true, instruction: "" }],
       finalExtract: { confirmation: "ABC123" },
     });
-    const res = await runLoop({ ...base, agent, extractSchema: z.object({ confirmation: z.string() }) });
+    const res = await runLoop({
+      ...base,
+      agent,
+      extractSchema: z.object({ confirmation: z.string() }),
+    });
     expect(res.extractedData).toEqual({ confirmation: "ABC123" });
   });
 
@@ -154,7 +176,12 @@ describe("runLoop", () => {
       sessionReplayUrl: undefined,
       goto: async () => {},
       observe: async () => [
-        { selector: "x", description: "Fill password with s3cret", method: "fill", arguments: ["s3cret"] },
+        {
+          selector: "x",
+          description: "Fill password with s3cret",
+          method: "fill",
+          arguments: ["s3cret"],
+        },
       ],
       act: async () => ({ success: true, message: "typed s3cret into the field" }),
       extract: (async (_i: string, schema: any) => {
