@@ -72,6 +72,14 @@ describe("parameterizeSteps", () => {
     expect(step.arguments).toEqual(["%username%"]);
     expect(step.paramTemplate).toBeNull();
   });
+
+  it("never corrupts a credential placeholder even when an input value collides with its word", () => {
+    const [step] = parameterizeSteps([record({ method: "fill", arguments: ["%username%"] })], {
+      name: "username",
+    });
+    expect(step.arguments).toEqual(["%username%"]);
+    expect(step.paramTemplate).toBeNull();
+  });
 });
 
 describe("resolveStep", () => {

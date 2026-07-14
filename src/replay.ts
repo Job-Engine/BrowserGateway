@@ -24,9 +24,13 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** Whole-token, case-insensitive occurrence of value inside text. */
+/**
+ * Whole-token, case-insensitive occurrence of value inside text. The percent
+ * sign is excluded from both boundaries so the interior of an existing
+ * %placeholder% token can never match.
+ */
 function tokenPattern(value: string): RegExp {
-  return new RegExp(`(^|[^a-zA-Z0-9])(${escapeRegExp(value)})(?=[^a-zA-Z0-9]|$)`, "gi");
+  return new RegExp(`(^|[^a-zA-Z0-9%])(${escapeRegExp(value)})(?=[^a-zA-Z0-9%]|$)`, "gi");
 }
 
 function substitute(text: string, key: string, value: string): { out: string; hit: boolean } {
