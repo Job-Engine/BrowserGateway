@@ -3,10 +3,20 @@ import {
   fuzzyMatch,
   normalizeIdentity,
   parameterizeSteps,
+  replayTrace,
   resolveStep,
+  type ReplayPlan,
+  type ReplayRunOptions,
+  type ReplayTrace,
   type TraceStep,
 } from "../src/replay.js";
-import type { ActionRecord } from "../src/types.js";
+import {
+  READ_ONLY_METHODS,
+  type ActionRecord,
+  type ActOutcome,
+  type BrowserAgent,
+  type ObservedAction,
+} from "../src/types.js";
 
 function record(
   action: Partial<ActionRecord["action"]>,
@@ -162,5 +172,172 @@ describe("fuzzyMatch", () => {
         "205 Morningside Ct NE Cedar Rapids IA 52402",
       ),
     ).toBe(true);
+  });
+});
+
+function fakeReplayAgent(opts: {
+  actResults?: ActOutcome[];
+  texts?: Record<string, string | null>;
+}): { agent: BrowserAgent; acted: ObservedAction[] } {
+  const acted: ObservedAction[] = [];
+  let i = 0;
+  const agent: BrowserAgent = {
+    goto: async () => {},
+    observe: async () => [],
+    act: async (action) => {
+      acted.push(action);
+      return opts.actResults?.[i++] ?? { success: true, message: "ok" };
+    },
+    extract: (async () => ({})) as unknown as BrowserAgent["extract"],
+    readText: async (selector) => opts.texts?.[selector] ?? null,
+    close: async () => {},
+  };
+  return { agent, acted };
+}
+
+const TRACE: ReplayTrace = {
+  steps: [
+    {
+      selector: "xpath=/html/body/input[1]",
+      method: "fill",
+      arguments: ["%username%"],
+      description: "fill username",
+      paramTemplate: null,
+    },
+    {
+      selector: 'xpath=//a[contains(., "Jason Marshall")]',
+      method: "click",
+      arguments: [],
+      description: "open the record",
+      paramTemplate: { selector: 'xpath=//a[contains(., "%name%")]', arguments: [] },
+    },
+  ],
+  readSelectors: {
+    matchedName: "xpath=//h1",
+    matchedAddress: "xpath=//p[1]",
+    ntpDate: "xpath=//span[1]",
+  },
+};
+
+const PLAN: ReplayPlan = {
+  reads: { matchedName: "", matchedAddress: "", ntpDate: "" },
+  verify: { matchedName: "name", matchedAddress: "address" },
+  assertTrue: ["matchVerified", "ntpDateFound"],
+};
+
+const INPUT = { name: "Maria Lopez", address: "10 Oak St" };
+const OK_TEXTS = {
+  "xpath=//h1": "Maria Lopez",
+  "xpath=//p[1]": "10 Oak Street",
+  "xpath=//span[1]": "Jul 11, 2026",
+};
+
+function run(overrides?: Partial<ReplayRunOptions>) {
+  return replayTrace({
+    agent: fakeReplayAgent({ texts: OK_TEXTS }).agent,
+    url: "https://example.test",
+    trace: TRACE,
+    plan: PLAN,
+    input: INPUT,
+    credentials: { username: "u", password: "p" },
+    allowedMethods: READ_ONLY_METHODS,
+    deadline: Date.now() + 60_000,
+    ...overrides,
+  });
+}
+
+describe("replayTrace", () => {
+  it("replays, reads, verifies, and asserts booleans", async () => {
+    const { agent, acted } = fakeReplayAgent({ texts: OK_TEXTS });
+    const out = await replayTrace({
+      agent,
+      url: "https://example.test",
+      trace: TRACE,
+      plan: PLAN,
+      input: INPUT,
+      credentials: { username: "u", password: "p" },
+      allowedMethods: READ_ONLY_METHODS,
+      deadline: Date.now() + 60_000,
+    });
+    expect(out.ok).toBe(true);
+    if (out.ok) {
+      expect(out.data).toEqual({
+        matchedName: "Maria Lopez",
+        matchedAddress: "10 Oak Street",
+        ntpDate: "Jul 11, 2026",
+        matchVerified: true,
+        ntpDateFound: true,
+      });
+    }
+    expect(acted[1].selector).toBe('xpath=//a[contains(., "Maria Lopez")]');
+  });
+
+  it("fails closed on a method outside the allowlist", async () => {
+    const trace: ReplayTrace = {
+      ...TRACE,
+      steps: [{ ...TRACE.steps[0], method: "uploadFile" }],
+    };
+    const out = await run({ trace });
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.reason).toMatch(/allowlist/);
+  });
+
+  it("escalates when an act fails", async () => {
+    const { agent } = fakeReplayAgent({
+      actResults: [{ success: false, message: "detached" }],
+      texts: OK_TEXTS,
+    });
+    const out = await run({ agent });
+    expect(out.ok).toBe(false);
+  });
+
+  it("escalates on identity mismatch", async () => {
+    const { agent } = fakeReplayAgent({
+      texts: { ...OK_TEXTS, "xpath=//h1": "Someone Else" },
+    });
+    const out = await run({ agent });
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.reason).toMatch(/mismatch/);
+  });
+
+  it("escalates when a verify read is missing", async () => {
+    const { agent } = fakeReplayAgent({ texts: { ...OK_TEXTS, "xpath=//h1": null } });
+    const out = await run({ agent, deadline: Date.now() + 1500 });
+    expect(out.ok).toBe(false);
+  });
+
+  it("returns null for an empty data read without escalating", async () => {
+    const { agent } = fakeReplayAgent({ texts: { ...OK_TEXTS, "xpath=//span[1]": null } });
+    const out = await run({ agent, deadline: Date.now() + 1500 });
+    expect(out.ok).toBe(true);
+    if (out.ok) expect(out.data.ntpDate).toBeNull();
+  });
+
+  it("stops at the deadline", async () => {
+    const out = await run({ deadline: Date.now() - 1 });
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.reason).toMatch(/deadline/);
+  });
+
+  it("retries a settling read once before giving up, then succeeds", async () => {
+    let calls = 0;
+    const agent: BrowserAgent = {
+      goto: async () => {},
+      observe: async () => [],
+      act: async () => ({ success: true, message: "ok" }),
+      extract: (async () => ({})) as unknown as BrowserAgent["extract"],
+      readText: async (selector) => {
+        if (selector === "xpath=//span[1]") {
+          calls++;
+          if (calls === 1) return null;
+        }
+        return OK_TEXTS[selector as keyof typeof OK_TEXTS] ?? null;
+      },
+      close: async () => {},
+    };
+    const out = await run({ agent });
+    expect(out.ok).toBe(true);
+    if (out.ok) expect(out.data.ntpDate).toBe("Jul 11, 2026");
+    expect(calls).toBeGreaterThanOrEqual(2);
   });
 });

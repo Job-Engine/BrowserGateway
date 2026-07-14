@@ -1,7 +1,7 @@
 // Deterministic replay: trace types, input parameterization, identity
 // matching, the replay executor, and the learn wrapper that records traces.
 // Sanctioned core change 5 (see docs/superpowers/specs/2026-07-14-deterministic-replay-design.md).
-import type { ActionRecord, ObservedAction } from "./types.js";
+import type { ActionRecord, BrowserAgent, ObservedAction } from "./types.js";
 
 export interface TraceStep {
   selector: string;
@@ -177,4 +177,105 @@ export function fuzzyMatch(shown: string, expected: string): boolean {
     cursor = found + 1;
   }
   return true;
+}
+
+/** Per-action replay configuration, declared on the catalogue entry. */
+export interface ReplayPlan {
+  /** Extract field to grounding hint (used at record time by the learn wrapper). */
+  reads: Record<string, string>;
+  /** Read field to input key; every pair must fuzzy-match or the run escalates. */
+  verify: Record<string, string>;
+  /** Boolean extract fields asserted true on a verified replay. */
+  assertTrue: string[];
+}
+
+export interface ReplayRunOptions {
+  agent: BrowserAgent;
+  url: string;
+  trace: ReplayTrace;
+  plan: ReplayPlan;
+  input: Record<string, string>;
+  credentials: Record<string, string>;
+  allowedMethods: readonly string[];
+  /** Epoch ms; work stops when passed. */
+  deadline: number;
+}
+
+export type ReplayOutcome =
+  | { ok: true; data: Record<string, unknown>; stepsUsed: number }
+  | { ok: false; reason: string; stepsUsed: number };
+
+/**
+ * Read with settle-retry. readText is fail-fast (never waits), but the DOM
+ * may still be settling right after the last replayed act. Retry up to 2
+ * more times, 500ms apart, before recording a null, respecting the deadline.
+ */
+async function readWithSettle(
+  agent: BrowserAgent,
+  selector: string,
+  deadline: number,
+): Promise<string | null> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const text = await agent.readText(selector);
+    if (text !== null) return text;
+    if (Date.now() + 500 > deadline) break;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  return null;
+}
+
+/**
+ * Execute a stored trace with zero LLM calls. Returns ok only when every step
+ * executed, every verify field fuzzy-matched the input, and the data reads
+ * completed. Anything else returns ok: false; the caller escalates to the
+ * learn path. This function never emits a business "failure".
+ */
+export async function replayTrace(options: ReplayRunOptions): Promise<ReplayOutcome> {
+  const variables = { ...options.input, ...options.credentials };
+  let stepsUsed = 0;
+  const fail = (reason: string): ReplayOutcome => ({ ok: false, reason, stepsUsed });
+
+  try {
+    await options.agent.goto(options.url);
+  } catch (e) {
+    return fail(`navigation failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  for (const step of options.trace.steps) {
+    if (Date.now() > options.deadline) return fail("deadline exceeded");
+    const method = step.method.toLowerCase();
+    const allowed = method !== "" && options.allowedMethods.some((m) => m.toLowerCase() === method);
+    if (!allowed) return fail(`method "${step.method || "(none)"}" is not in the allowlist`);
+    const action = resolveStep(step, options.input);
+    let outcome;
+    try {
+      outcome = await options.agent.act(action, variables);
+    } catch (e) {
+      outcome = { success: false, message: e instanceof Error ? e.message : String(e) };
+    }
+    stepsUsed++;
+    if (!outcome.success) return fail(`step ${stepsUsed} failed: ${outcome.message}`);
+  }
+
+  if (Date.now() > options.deadline) return fail("deadline exceeded");
+
+  const data: Record<string, unknown> = {};
+  for (const field of Object.keys(options.plan.reads)) {
+    const selector = options.trace.readSelectors[field];
+    data[field] = selector ? await readWithSettle(options.agent, selector, options.deadline) : null;
+  }
+
+  for (const [field, inputKey] of Object.entries(options.plan.verify)) {
+    const shown = data[field];
+    const expected = options.input[inputKey];
+    if (typeof shown !== "string" || !expected) {
+      return fail(`verify read "${field}" is missing`);
+    }
+    if (!fuzzyMatch(shown, expected)) {
+      return fail(`verification mismatch on "${field}"`);
+    }
+  }
+
+  for (const field of options.plan.assertTrue) data[field] = true;
+  return { ok: true, data, stepsUsed };
 }
