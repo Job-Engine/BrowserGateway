@@ -132,13 +132,49 @@ export function normalizeIdentity(s: string): string {
 }
 
 /**
- * Conservative identity match: after normalization, every expected token must
- * appear among the shown tokens. Extra tokens on the page (middle names,
- * suite numbers) are tolerated; missing or different tokens are not.
+ * Conservative identity match. After normalization:
+ * - empty shown or expected text never matches;
+ * - every expected word token must be present in shown with at least the
+ *   same multiplicity;
+ * - the expected numeric tokens must appear in shown in the same order
+ *   (subsequence), so transposed house/unit/zip numbers reject.
+ * False rejects cost an extra LLM run; false accepts return the wrong
+ * customer's data. When in doubt, reject.
  */
 export function fuzzyMatch(shown: string, expected: string): boolean {
-  const shownTokens = new Set(normalizeIdentity(shown).split(" "));
-  const expectedTokens = normalizeIdentity(expected).split(" ");
-  if (expectedTokens.length === 0) return false;
-  return expectedTokens.every((t) => shownTokens.has(t));
+  const shownNorm = normalizeIdentity(shown);
+  const expectedNorm = normalizeIdentity(expected);
+  if (shownNorm === "" || expectedNorm === "") return false;
+
+  const shownTokens = shownNorm.split(" ");
+  const expectedTokens = expectedNorm.split(" ");
+
+  const isNumeric = (t: string): boolean => /^\d+$/.test(t);
+
+  const shownWordCounts = new Map<string, number>();
+  for (const t of shownTokens) {
+    if (!isNumeric(t)) shownWordCounts.set(t, (shownWordCounts.get(t) ?? 0) + 1);
+  }
+  for (const t of expectedTokens) {
+    if (isNumeric(t)) continue;
+    const left = shownWordCounts.get(t) ?? 0;
+    if (left === 0) return false;
+    shownWordCounts.set(t, left - 1);
+  }
+
+  const shownNumbers = shownTokens.filter(isNumeric);
+  const expectedNumbers = expectedTokens.filter(isNumeric);
+  let cursor = 0;
+  for (const n of expectedNumbers) {
+    let found = -1;
+    for (let i = cursor; i < shownNumbers.length; i++) {
+      if (shownNumbers[i] === n) {
+        found = i;
+        break;
+      }
+    }
+    if (found === -1) return false;
+    cursor = found + 1;
+  }
+  return true;
 }

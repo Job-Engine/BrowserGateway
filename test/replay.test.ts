@@ -142,4 +142,25 @@ describe("fuzzyMatch", () => {
       ),
     ).toBe(false);
   });
+
+  it("rejects empty or punctuation-only values on either side", () => {
+    expect(fuzzyMatch("", "")).toBe(false);
+    expect(fuzzyMatch("...", "")).toBe(false);
+    expect(fuzzyMatch("   ", "###")).toBe(false);
+    expect(fuzzyMatch("", "Jason Marshall")).toBe(false);
+    expect(fuzzyMatch("Jason Marshall", "")).toBe(false);
+  });
+
+  it("rejects transposed numeric address components", () => {
+    expect(fuzzyMatch("5 Main Street Apt 12", "12 Main St Apt 5")).toBe(false);
+  });
+
+  it("still accepts when numeric order is preserved", () => {
+    expect(
+      fuzzyMatch(
+        "205 Morningside Court Northeast, Cedar Rapids, IA 52402",
+        "205 Morningside Ct NE Cedar Rapids IA 52402",
+      ),
+    ).toBe(true);
+  });
 });
