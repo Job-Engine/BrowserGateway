@@ -95,3 +95,50 @@ export function resolveStep(step: TraceStep, input: Record<string, string>): Obs
     description: step.description,
   };
 }
+
+/** Common US address and name abbreviations, both directions normalized. */
+const ABBREVIATIONS: Record<string, string> = {
+  st: "street",
+  ave: "avenue",
+  blvd: "boulevard",
+  dr: "drive",
+  rd: "road",
+  ln: "lane",
+  ct: "court",
+  cir: "circle",
+  hwy: "highway",
+  pkwy: "parkway",
+  apt: "apartment",
+  ste: "suite",
+  fl: "floor",
+  n: "north",
+  s: "south",
+  e: "east",
+  w: "west",
+  ne: "northeast",
+  nw: "northwest",
+  se: "southeast",
+  sw: "southwest",
+};
+
+export function normalizeIdentity(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[.,#()]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((t) => ABBREVIATIONS[t] ?? t)
+    .join(" ");
+}
+
+/**
+ * Conservative identity match: after normalization, every expected token must
+ * appear among the shown tokens. Extra tokens on the page (middle names,
+ * suite numbers) are tolerated; missing or different tokens are not.
+ */
+export function fuzzyMatch(shown: string, expected: string): boolean {
+  const shownTokens = new Set(normalizeIdentity(shown).split(" "));
+  const expectedTokens = normalizeIdentity(expected).split(" ");
+  if (expectedTokens.length === 0) return false;
+  return expectedTokens.every((t) => shownTokens.has(t));
+}

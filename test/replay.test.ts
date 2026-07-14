@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { parameterizeSteps, resolveStep, type TraceStep } from "../src/replay.js";
+import {
+  fuzzyMatch,
+  normalizeIdentity,
+  parameterizeSteps,
+  resolveStep,
+  type TraceStep,
+} from "../src/replay.js";
 import type { ActionRecord } from "../src/types.js";
 
 function record(
@@ -99,5 +105,41 @@ describe("resolveStep", () => {
   it("uses the recorded selector when no template exists", () => {
     const action = resolveStep({ ...templated, paramTemplate: null }, { name: "Maria Lopez" });
     expect(action.selector).toBe('xpath=//a[contains(., "Jason Marshall")]');
+  });
+});
+
+describe("normalizeIdentity", () => {
+  it("lowercases, strips punctuation, expands abbreviations", () => {
+    expect(normalizeIdentity("205 Morningside Ct. NE, Cedar Rapids")).toBe(
+      "205 morningside court northeast cedar rapids",
+    );
+  });
+});
+
+describe("fuzzyMatch", () => {
+  it("accepts exact matches ignoring case", () => {
+    expect(fuzzyMatch("Jason Marshall", "jason marshall")).toBe(true);
+  });
+  it("accepts abbreviation and punctuation differences", () => {
+    expect(
+      fuzzyMatch(
+        "205 Morningside Court Northeast, Cedar Rapids, IA 52402",
+        "205 Morningside Ct NE Cedar Rapids IA 52402",
+      ),
+    ).toBe(true);
+  });
+  it("accepts extra tokens on the page (middle name) when all expected tokens appear", () => {
+    expect(fuzzyMatch("Jason A Marshall", "Jason Marshall")).toBe(true);
+  });
+  it("rejects a different person", () => {
+    expect(fuzzyMatch("Mason Marshall", "Jason Marshall")).toBe(false);
+  });
+  it("rejects a different street", () => {
+    expect(
+      fuzzyMatch(
+        "206 Sunnyside Court Northeast, Cedar Rapids",
+        "205 Morningside Ct NE Cedar Rapids",
+      ),
+    ).toBe(false);
   });
 });
