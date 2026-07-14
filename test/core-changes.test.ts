@@ -39,6 +39,7 @@ function makeFakeAgent(opts: {
         return plans.shift() ?? { reasoning: "", isDone: true, instruction: "" };
       return {};
     }) as unknown as BrowserAgent["extract"],
+    readText: async () => null,
     close: vi.fn(async () => {}),
   };
   return { agent, acted };

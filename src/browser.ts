@@ -85,6 +85,18 @@ export async function createSession(config: CreateSessionConfig): Promise<Browse
       // Cast at the adapter boundary: Stagehand accepts Zod 3/4 schemas via its own type.
       return stagehand.extract(instruction, schema as never) as Promise<T>;
     },
+    async readText(selector: string): Promise<string | null> {
+      try {
+        // Stagehand's understudy Locator.textContent() takes no options (no
+        // timeout param, unlike real Playwright); resolution timeout is
+        // internal to the locator. Never throws past this boundary.
+        const text = await page.locator(selector).first().textContent();
+        const trimmed = text.trim();
+        return trimmed.length > 0 ? trimmed : null;
+      } catch {
+        return null;
+      }
+    },
     async close() {
       await stagehand.close();
     },

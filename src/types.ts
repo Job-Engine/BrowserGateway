@@ -110,5 +110,11 @@ export interface BrowserAgent {
   observe(instruction: string, variables?: Record<string, string>): Promise<ObservedAction[]>;
   act(action: ObservedAction, variables?: Record<string, string>): Promise<ActOutcome>;
   extract<T>(instruction: string, schema: z.ZodType<T>): Promise<T>;
+  /**
+   * Read the trimmed text content of the first element matching selector.
+   * Null when missing, empty, or unreadable. No LLM involved. Used by the
+   * deterministic replay path (sanctioned change 5).
+   */
+  readText(selector: string): Promise<string | null>;
   close(): Promise<void>;
 }

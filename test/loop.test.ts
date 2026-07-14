@@ -36,6 +36,7 @@ function makeFakeAgent(opts: {
       }
       return opts.finalExtract;
     }) as unknown as BrowserAgent["extract"],
+    readText: async () => null,
     close: vi.fn(async () => {}),
   };
   return { agent, acted };
@@ -191,6 +192,7 @@ describe("runLoop", () => {
         }
         return undefined;
       }) as unknown as import("../src/types.js").BrowserAgent["extract"],
+      readText: async () => null,
       close: async () => {},
     };
     const res = await runLoop({

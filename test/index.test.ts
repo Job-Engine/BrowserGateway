@@ -14,6 +14,7 @@ const fake: { agent: BrowserAgent } = {
       if ("isDone" in shape) return { reasoning: "", isDone: true, instruction: "" };
       return {};
     }) as unknown as BrowserAgent["extract"], // cast: vi.fn can't express the generic extract<T> signature
+    readText: async () => null,
     close: vi.fn(async () => {}),
   },
 };
@@ -76,6 +77,7 @@ describe("runAgent", () => {
           return { reasoning: "", isDone: false, instruction: "submit the form" };
         return {};
       }) as unknown as import("../src/types.js").BrowserAgent["extract"],
+      readText: async () => null,
       close: closeSpy,
     };
     const browser = await import("../src/browser.js");
