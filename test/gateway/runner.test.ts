@@ -129,6 +129,17 @@ describe("runJob envelope mapping", () => {
     expect(runDeterministicMock).not.toHaveBeenCalled();
   });
 
+  it("rejects an input value containing a placeholder token before running the agent (Fix A)", async () => {
+    const envelope = await runJob("job-5b", entry, {
+      name: "%password%",
+      address: "10 Oak St",
+    });
+    expect(envelope.status).toBe("error");
+    expect(envelope.error?.code).toBe("INVALID_INPUT");
+    expect(envelope.error?.fields).toEqual(["name"]);
+    expect(runDeterministicMock).not.toHaveBeenCalled();
+  });
+
   it("maps credential resolution failure to AUTH_UNAVAILABLE", async () => {
     mocks.resolvePortalCredentials.mockRejectedValue(new Error("No credentials for portal"));
     const envelope = await runJob("job-6", entry, validInput);
@@ -298,5 +309,34 @@ describe("runJob with traces", () => {
     });
     expect(calls.saved).toHaveLength(1);
     expect((calls.saved[0] as { activate: boolean }).activate).toBe(false);
+  });
+
+  it("does not save a trace from a business-failure run, even with a traceDraft (Fix B)", async () => {
+    runDeterministicMock.mockResolvedValueOnce({
+      mode: "learned",
+      status: "completed",
+      success: true,
+      data: {
+        matchVerified: false,
+        matchedName: null,
+        matchedAddress: null,
+        ntpDateFound: false,
+        ntpDate: null,
+      },
+      actionsLog: [],
+      stepsUsed: 4,
+      summary: "no match",
+      traceDraft: { steps: [], readSelectors: { matchedName: "xpath=//h1" }, complete: true },
+    });
+    const { store, calls } = fakeTraces(null);
+    const envelope = await runJob(
+      "job-5",
+      resolveAction("lightreach.ntpDate", "spartan"),
+      validInput,
+      { traces: store },
+    );
+    expect(envelope.status).toBe("failure");
+    expect(envelope.error?.code).toBe("MATCH_FAILED");
+    expect(calls.saved).toHaveLength(0);
   });
 });

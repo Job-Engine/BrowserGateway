@@ -124,10 +124,11 @@ description, arguments, or selector contains a current input value gets a
 `paramTemplate`: the literal value is replaced with its `%inputKey%` token.
 Matching is whole-token and case-insensitive, so short values (a two-digit
 `projectId`) cannot false-positive inside unrelated selectors. At replay time
-the template is resolved with the current job's input and executed as a
-text-based locator (Playwright `getByText`/`getByRole` style, first match).
-Credentials never appear literally, so this applies to input fields (`name`,
-`address`, `projectId`) only.
+the template is resolved by substituting the current job's input values into
+the recorded step's selector and arguments, then executed through the same
+`agent.act` call as any other step; there is no separate text-based locator
+strategy. Credentials never appear literally, so this applies to input fields
+(`name`, `address`, `projectId`) only.
 
 ## Replay execution (`src/replay.ts`)
 
@@ -177,6 +178,14 @@ Envelope changes are additive only: `meta.mode: "replay" | "learned" |
 - Heals write an audit log entry.
 - Optional follow-up (not in this build): canaries execute replay traces on
   schedule so portal drift is caught before caller jobs hit it.
+- Follow-up (not in this build): heal-threshold alerting. After N heals in a
+  window for a given use case and client pair, stop activating new traces for
+  that pair and alert via the existing Slack webhook path, instead of quietly
+  re-healing indefinitely.
+- Follow-up (decide before the live acceptance run): the null-read policy. A
+  data field that was non-null at record time and reads null at replay could
+  mean the underlying value legitimately changed, or that the portal moved the
+  field. Decide whether that case should escalate (heal) or be accepted as-is.
 
 ## Code touch points
 

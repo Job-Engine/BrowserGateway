@@ -94,6 +94,20 @@ describe("trace store", () => {
     ).rejects.toThrow(/credential/i);
   });
 
+  it("rejects a trace whose credential literal appears only in its JSON-escaped form (Fix D)", async () => {
+    const secret = 'pa"ss\\word';
+    const leaky = [{ ...steps[0], arguments: [secret] }];
+    await expect(
+      store.saveTrace({
+        ...KEY,
+        steps: leaky,
+        readSelectors,
+        activate: true,
+        secretValues: [secret],
+      }),
+    ).rejects.toThrow(/credential/i);
+  });
+
   it("records success and invalidates", async () => {
     const active = await store.getActive(KEY.useCase, KEY.client);
     await store.recordSuccess(active!.id);

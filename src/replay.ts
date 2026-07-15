@@ -63,7 +63,10 @@ export function parameterizeSteps(
       let outArgs = [...args];
       let touched = false;
       for (const [key, value] of Object.entries(input)) {
-        if (!value || value.length < MIN_PARAM_LENGTH) continue;
+        // Fix I: non-string input values (defensive; the type is nominally
+        // Record<string, string>, but callers can still hand us other JSON
+        // types at the runtime boundary) are skipped, never templated.
+        if (typeof value !== "string" || !value || value.length < MIN_PARAM_LENGTH) continue;
         const sel = substitute(selector, key, value);
         if (sel.hit) {
           selector = sel.out;
@@ -85,16 +88,48 @@ export function parameterizeSteps(
     });
 }
 
+/** Whole-token %placeholder% matches, e.g. %name% or %username%. */
+const PLACEHOLDER_TOKENS = /%[a-zA-Z0-9_]+%/g;
+
+function tokensOf(text: string): Set<string> {
+  return new Set(text.match(PLACEHOLDER_TOKENS) ?? []);
+}
+
+/**
+ * Fill %inputKey% tokens in `text` with the current job's input, then verify
+ * no NEW %placeholder% token appeared in the result (Fix A). Templates
+ * legitimately retain credential placeholders (%username%, %otp%, ...); those
+ * are already present in `text` before filling and are left untouched here.
+ * A caller who submits an input value that itself looks like a placeholder
+ * token (e.g. name: "%password%") would otherwise inject that token into the
+ * resolved action, which `agent.act(action, variables)` resolves against the
+ * real credential. This is belt-and-suspenders: the gateway runner already
+ * rejects such input before a job ever reaches replay.
+ */
+function fillChecked(text: string, input: Record<string, string>): string {
+  const before = tokensOf(text);
+  const filled = Object.entries(input).reduce(
+    (acc, [key, value]) => (typeof value === "string" ? acc.split(`%${key}%`).join(value) : acc),
+    text,
+  );
+  for (const token of tokensOf(filled)) {
+    if (!before.has(token)) {
+      throw new Error("resolveStep: input introduced a placeholder token");
+    }
+  }
+  return filled;
+}
+
 /** Resolve a step against the current job's input for execution. */
 export function resolveStep(step: TraceStep, input: Record<string, string>): ObservedAction {
-  const fill = (text: string): string =>
-    Object.entries(input).reduce((acc, [key, value]) => acc.split(`%${key}%`).join(value), text);
   const source = step.paramTemplate ?? { selector: step.selector, arguments: step.arguments };
   return {
-    selector: step.paramTemplate ? fill(source.selector) : source.selector,
+    selector: step.paramTemplate ? fillChecked(source.selector, input) : source.selector,
     method: step.method,
     // Credential tokens (%username%...) stay: Stagehand resolves them via variables.
-    arguments: step.paramTemplate ? source.arguments.map(fill) : source.arguments,
+    arguments: step.paramTemplate
+      ? source.arguments.map((a) => fillChecked(a, input))
+      : source.arguments,
     description: step.description,
   };
 }
@@ -227,10 +262,15 @@ async function readWithSettle(
   return null;
 }
 
-/** Replace literal credential values with *** in outbound failure text. */
+/**
+ * Replace literal credential values with *** in outbound failure text.
+ * Secrets are redacted longest-first (Fix F): redacting a short secret ("u")
+ * before a longer one that contains it ("hunter2") would mangle the longer
+ * secret into a partially-redacted, still-recoverable string ("h***nter2").
+ */
 function redactSecrets(text: string, secrets: string[]): string {
   let out = text;
-  for (const s of secrets) {
+  for (const s of [...secrets].sort((a, b) => b.length - a.length)) {
     if (s) out = out.split(s).join("***");
   }
   return out;
@@ -453,21 +493,30 @@ export async function runDeterministic(
     const status: AgentStatus = timedOut && loop.status === "aborted" ? "timeout" : loop.status;
     const success = status === "completed";
 
-    // 3. Ground read selectors while the record page is still open.
+    // 3. Ground read selectors while the record page is still open. Each
+    // observe() call costs real wall-clock time; stop grounding once the
+    // budget is gone rather than run past the deadline (Fix C). A draft that
+    // stops early is simply marked incomplete; it is never activated.
     let traceDraft: TraceDraft | null = null;
     if (success && options.replayPlan) {
       const readSelectors: Record<string, string> = {};
-      let complete = true;
-      for (const [field, hint] of Object.entries(options.replayPlan.reads)) {
-        try {
-          const [obs] = await agent.observe(
-            `Find ${hint}. Do not interact with it, only locate it.`,
-            variables,
-          );
-          if (obs?.selector) readSelectors[field] = obs.selector;
-          else complete = false;
-        } catch {
-          complete = false;
+      let complete = Date.now() < deadline;
+      if (complete) {
+        for (const [field, hint] of Object.entries(options.replayPlan.reads)) {
+          if (Date.now() >= deadline) {
+            complete = false;
+            break;
+          }
+          try {
+            const [obs] = await agent.observe(
+              `Find ${hint}. Do not interact with it, only locate it.`,
+              variables,
+            );
+            if (obs?.selector) readSelectors[field] = obs.selector;
+            else complete = false;
+          } catch {
+            complete = false;
+          }
         }
       }
       traceDraft = {

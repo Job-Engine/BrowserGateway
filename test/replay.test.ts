@@ -124,6 +124,12 @@ describe("resolveStep", () => {
     const action = resolveStep({ ...templated, paramTemplate: null }, { name: "Maria Lopez" });
     expect(action.selector).toBe('xpath=//a[contains(., "Jason Marshall")]');
   });
+
+  it("throws when an input value introduces a new placeholder token (Fix A)", () => {
+    expect(() => resolveStep(templated, { name: "%password%" })).toThrow(
+      /input introduced a placeholder token/,
+    );
+  });
 });
 
 describe("normalizeIdentity", () => {
@@ -370,6 +376,28 @@ describe("replayTrace", () => {
       expect(out.reason).toContain("***");
     }
   });
+
+  it("redacts secrets longest-first so a short secret cannot leave a longer one partially recoverable (Fix F)", async () => {
+    const { agent } = fakeReplayAgent({
+      actResults: [{ success: false, message: "fill failed for value hunter2 on selector" }],
+      texts: OK_TEXTS,
+    });
+    const out = await replayTrace({
+      agent,
+      url: "https://example.test",
+      trace: TRACE,
+      plan: PLAN,
+      input: INPUT,
+      credentials: { username: "u", password: "hunter2" },
+      allowedMethods: READ_ONLY_METHODS,
+      deadline: Date.now() + 60_000,
+    });
+    expect(out.ok).toBe(false);
+    if (!out.ok) {
+      expect(out.reason).toContain("***");
+      expect(out.reason).not.toContain("nter2");
+    }
+  });
 });
 
 function learnAgent(opts: {
@@ -471,6 +499,43 @@ describe("runDeterministic (learn path)", () => {
     });
     const result = await runDeterministic(options);
     expect(result.traceDraft?.complete).toBe(false);
+  });
+
+  it("stops grounding once the wall-clock budget is gone and marks the draft incomplete without observing remaining fields (Fix C)", async () => {
+    let groundCalls = 0;
+    const base = learnAgent({
+      planScript: [{ isDone: true, instruction: "" }],
+      observed: { selector: "xpath=//a", description: "x", method: "click", arguments: [] },
+      extractResult: {
+        matchVerified: true,
+        matchedName: "Jason Marshall",
+        matchedAddress: "205 Morningside Ct",
+        ntpDateFound: true,
+        ntpDate: "Jul 11, 2026",
+      },
+      groundSelector: "xpath=//h1",
+    });
+    let extractCalls = 0;
+    sessionAgent.current = {
+      ...base,
+      observe: async (instruction: string) => {
+        if (instruction.startsWith("Find ")) groundCalls++;
+        return base.observe(instruction);
+      },
+      extract: (async (instruction: string, schema?: unknown) => {
+        extractCalls++;
+        // Burn real wall-clock time past the deadline on the planner's first
+        // call, so by the time the run would ground read selectors, the
+        // budget is already gone. Only delay once; the loop's finalize()
+        // extract call does not need to be slow too.
+        if (extractCalls === 1) await new Promise((r) => setTimeout(r, 5_500));
+        return (base.extract as (i: string, s?: unknown) => Promise<unknown>)(instruction, schema);
+      }) as unknown as BrowserAgent["extract"],
+    };
+    const result = await runDeterministic({ ...options, timeoutMs: 5_200 });
+    expect(result.success).toBe(true);
+    expect(result.traceDraft?.complete).toBe(false);
+    expect(groundCalls).toBe(0);
   });
 
   it("returns no draft when the run does not complete", async () => {

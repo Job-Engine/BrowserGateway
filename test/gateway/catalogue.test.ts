@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { CATALOGUE, getEntry, resolveAction } from "../../src/gateway/catalogue.js";
 
 /**
@@ -116,6 +117,19 @@ describe("resolveAction (WL override merge)", () => {
     expect(action.url).toBe("https://special.example.com/login");
     expect(action.timeoutMs).toBe(120_000);
     expect(action.buildGoal(input, { hasOtp: false })).toContain("sidebar search");
+  });
+});
+
+describe("catalogue input schemas never accept a credential-shaped key (Fix A)", () => {
+  it("never uses username, password, or otp as an input schema key", () => {
+    const reserved = ["username", "password", "otp"];
+    for (const entry of Object.values(CATALOGUE)) {
+      const shape = (entry.inputSchema as z.ZodObject<z.ZodRawShape>).shape;
+      const keys = Object.keys(shape);
+      for (const r of reserved) {
+        expect(keys).not.toContain(r);
+      }
+    }
   });
 });
 

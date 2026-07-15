@@ -146,6 +146,33 @@ describe("queue worker", () => {
     expect(done?.envelope?.error?.message).toContain("runner exploded");
   });
 
+  it("bills a replay-mode run at zero cost regardless of stepsUsed (Fix E)", async () => {
+    const [job] = await enqueue(1);
+    const worker = createQueueWorker({
+      store,
+      logger,
+      execute: async (j) =>
+        ({
+          jobId: j.id,
+          useCase: j.useCase,
+          status: "success",
+          meta: {
+            ranAt: new Date().toISOString(),
+            durationMs: 1,
+            attempts: 1,
+            stepsUsed: 5,
+            mode: "replay",
+          },
+        }) as JobEnvelope,
+      config: { pollIntervalMs: 15, sweepIntervalMs: 60_000, costPerStepUsd: 0.05 },
+    });
+    worker.start();
+    await waitFor(async () => (await store.get(job.id))?.state === "DONE");
+    await worker.stop();
+    const row = await db.pool.query("select cost_usd from jobs where id = $1", [job.id]);
+    expect(Number(row.rows[0].cost_usd)).toBe(0);
+  });
+
   it("drains in-flight work on stop (M4)", async () => {
     const [job] = await enqueue(1);
     let finished = false;

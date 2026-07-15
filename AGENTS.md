@@ -137,7 +137,7 @@ Fixed and locked in (do not regress): TOTP never cached (username/password keep 
 
 ## Glossary
 
-Platform: a website the gateway can drive. Action: one task on it, `platform.action`, with a fixed recipe and locked output shape. Client: a whitelabel login identity (`lgcyco`, `brandx`). Override: a client's navigation-only adjustments to a base action (label map, start URL, goal hints, timeout); never the output shape. Canary: a scheduled known-record job per platform.client that catches broken logins and layout drift early. Replay: the Browserbase session recording attached to every job. Envelope: the uniform answer object every job returns.
+Platform: a website the gateway can drive. Action: one task on it, `platform.action`, with a fixed recipe and locked output shape. Client: a whitelabel login identity (`lgcyco`, `brandx`). Override: a client's navigation-only adjustments to a base action (label map, start URL, goal hints, timeout); never the output shape. Canary: a scheduled known-record job per platform.client that catches broken logins and layout drift early. Replay: the Browserbase session recording attached to every job. Trace replay: the deterministic re-execution of a stored action trace (`src/replay.ts`), zero LLM calls; not to be confused with the session recording above. Envelope: the uniform answer object every job returns.
 
 ## Working rules for agents
 

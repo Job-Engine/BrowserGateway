@@ -8,7 +8,7 @@ export default defineConfig({
     hookTimeout: 120_000,
     coverage: {
       provider: "v8",
-      include: ["src/gateway/**"],
+      include: ["src/gateway/**", "src/replay.ts"],
       // server.ts is the composition root: pure wiring, smoke-tested end to
       // end via the compiled build; excluded from the unit coverage gate.
       exclude: ["src/gateway/server.ts"],

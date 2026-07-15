@@ -79,13 +79,15 @@ export function createQueueWorker(deps: QueueWorkerDeps) {
     // attempts in the envelope reflects the store's count, not runner guesses.
     envelope.meta.attempts = job.attempts;
     const stepsUsed = envelope.meta.stepsUsed;
-    await store.complete(job.id, envelope, {
-      stepsUsed,
-      costUsd:
-        stepsUsed !== undefined && config.costPerStepUsd > 0
+    // Fix E: a replay makes zero LLM calls, so it is billed at zero
+    // regardless of stepsUsed; learned/healed runs keep the per-step estimate.
+    const costUsd =
+      envelope.meta.mode === "replay"
+        ? 0
+        : stepsUsed !== undefined && config.costPerStepUsd > 0
           ? Number((stepsUsed * config.costPerStepUsd).toFixed(4))
-          : undefined,
-    });
+          : undefined;
+    await store.complete(job.id, envelope, { stepsUsed, costUsd });
     log.info({ jobId: job.id, status: envelope.status, attempts: job.attempts }, "job done");
   }
 

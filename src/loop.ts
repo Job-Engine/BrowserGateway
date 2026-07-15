@@ -41,7 +41,10 @@ export interface LoopResult {
 function redact(text: string | undefined, secrets: string[]): string | undefined {
   if (!text) return text;
   let out = text;
-  for (const s of secrets) {
+  // Fix F: longest-first so a short secret cannot mangle a longer one it's a
+  // substring of (e.g. "u" redacting inside "hunter2" before "hunter2" itself
+  // is redacted would leak "h***nter2").
+  for (const s of [...secrets].sort((a, b) => b.length - a.length)) {
     if (s) out = out.split(s).join("***");
   }
   return out;

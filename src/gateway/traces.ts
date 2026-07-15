@@ -55,7 +55,13 @@ export function createTraceStore(pool: pg.Pool) {
     async saveTrace(opts: SaveTraceOpts): Promise<TraceRow> {
       const serialized = JSON.stringify({ steps: opts.steps, readSelectors: opts.readSelectors });
       for (const secret of opts.secretValues) {
-        if (secret && serialized.includes(secret)) {
+        if (!secret) continue;
+        // Fix D: also check the JSON-escaped form. A secret containing a
+        // quote or backslash appears escaped in JSON.stringify output (e.g.
+        // `pa"ss\word` becomes `pa\"ss\\word`), so a raw substring check alone
+        // lets it slip through.
+        const escaped = JSON.stringify(secret).slice(1, -1);
+        if (serialized.includes(secret) || serialized.includes(escaped)) {
           throw new Error("trace rejected: payload contains a credential literal");
         }
       }

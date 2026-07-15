@@ -8,6 +8,14 @@ import type { TraceStore } from "./traces.js";
 /** Default per-run wall-clock budget; a client override (timeoutMs) wins. */
 const RUN_TIMEOUT_MS = 300_000;
 
+/**
+ * Matches a %placeholder% token. Legitimate in a stored trace template
+ * (%username%, %name%, ...); never legitimate inside caller-supplied input,
+ * where it would let a caller smuggle a credential token past parameterization
+ * (Fix A: `resolveStep`/Stagehand resolve %password% against the real secret).
+ */
+const PLACEHOLDER_TOKEN = /%[a-zA-Z0-9_]+%/;
+
 export interface RunnerDeps {
   traces?: TraceStore;
   audit?: (action: string, entity: string, detail?: unknown) => Promise<void>;
@@ -83,6 +91,25 @@ export async function runJob(
   }
   const input = parsed.data as Record<string, string>;
 
+  // 1b. Reject a caller value that itself looks like a %placeholder% token
+  //     (Fix A). A stored template only substitutes %inputKey% tokens; if the
+  //     caller's value IS a token like %password%, the filled selector or
+  //     argument would carry that token into agent.act(action, variables),
+  //     which resolves it against the real credential.
+  const placeholderFields = Object.entries(input)
+    .filter(([, value]) => typeof value === "string" && PLACEHOLDER_TOKEN.test(value))
+    .map(([key]) => key);
+  if (placeholderFields.length > 0) {
+    return base({
+      status: "error",
+      error: {
+        code: "INVALID_INPUT",
+        message: "input values must not contain placeholder tokens",
+        fields: placeholderFields,
+      },
+    });
+  }
+
   // 2. Resolve this platform-and-client's credentials just in time (WL:
   //    one 1Password item per platform.client pair).
   let credentials: Record<string, string> = {};
@@ -125,12 +152,104 @@ export async function runJob(
     result.mode === "replay" ? "replay" : result.replayFailureReason ? "healed" : "learned";
   let traceVersion = result.mode === "replay" ? activeTrace?.version : undefined;
 
-  // 4. Trace bookkeeping (best effort; never fails the job).
-  if (deps.traces) {
+  const sessionUrl = result.sessionReplayUrl;
+  const sessionId = result.sessionId;
+  const extracted = result.data;
+
+  // 4. Normalize outcome FIRST (Fix B). Trace bookkeeping below gates on the
+  //    FINAL envelope status, not the agent's raw result.success: a run that
+  //    resolves to a clean business failure (matchVerified/ntpDateFound false,
+  //    or GOAL_NOT_COMPLETED) must never save or activate a trace.
+  let envelope: JobEnvelope;
+  if (result.status === "error") {
+    envelope = base({
+      status: "error",
+      sessionUrl,
+      sessionId,
+      stepsUsed: result.stepsUsed,
+      mode,
+      traceVersion,
+      error: { code: "RUN_ERROR", message: result.error?.message ?? result.summary },
+    });
+  } else if (result.status === "timeout") {
+    envelope = base({
+      status: "error",
+      sessionUrl,
+      sessionId,
+      stepsUsed: result.stepsUsed,
+      mode,
+      traceVersion,
+      error: { code: "TIMEOUT", message: "The run exceeded its wall-clock timeout." },
+    });
+  } else if (result.status === "blocked") {
+    envelope = base({
+      status: "error",
+      sessionUrl,
+      sessionId,
+      stepsUsed: result.stepsUsed,
+      mode,
+      traceVersion,
+      error: {
+        code: "ACTION_BLOCKED",
+        message: "An action outside the read-only method allowlist was blocked.",
+      },
+    });
+  } else {
+    // Generic negative-outcome signals (present for portals that extract them).
+    const matchVerified = boolField(extracted, "matchVerified");
+    const ntpDateFound = boolField(extracted, "ntpDateFound");
+    if (matchVerified === false) {
+      envelope = base({
+        status: "failure",
+        sessionUrl,
+        sessionId,
+        stepsUsed: result.stepsUsed,
+        mode,
+        traceVersion,
+        data: extracted,
+        error: {
+          code: "MATCH_FAILED",
+          message: "No record matched on name and address.",
+          fields: ["name", "address"],
+        },
+      });
+    } else if (ntpDateFound === false) {
+      envelope = base({
+        status: "failure",
+        sessionUrl,
+        sessionId,
+        stepsUsed: result.stepsUsed,
+        mode,
+        traceVersion,
+        data: extracted,
+        error: {
+          code: "NTP_FIELD_NOT_FOUND",
+          message: "NTP Date field was not found on the record.",
+          fields: ["ntpDate"],
+        },
+      });
+    } else {
+      envelope = base({
+        status: result.success ? "success" : "failure",
+        sessionUrl,
+        sessionId,
+        stepsUsed: result.stepsUsed,
+        mode,
+        traceVersion,
+        data: extracted,
+        error: result.success ? undefined : { code: "GOAL_NOT_COMPLETED", message: result.summary },
+      });
+    }
+  }
+
+  // 5. Trace bookkeeping (best effort; never fails the job). Only a run whose
+  //    FINAL envelope is "success" may record a replay success or save/
+  //    activate a learned trace (Fix B).
+  if (deps.traces && envelope.status === "success") {
     try {
-      if (result.mode === "replay" && result.success && activeTrace) {
+      if (result.mode === "replay" && activeTrace) {
         await deps.traces.recordSuccess(activeTrace.id);
-      } else if (result.success && result.traceDraft) {
+      } else if (result.traceDraft) {
         const saved = await deps.traces.saveTrace({
           useCase: action.useCase,
           client: action.client,
@@ -142,6 +261,7 @@ export async function runJob(
           secretValues: Object.values(credentials).filter((v) => v.length > 0),
         });
         traceVersion = saved.version;
+        envelope.meta.traceVersion = traceVersion;
         await deps.audit?.(
           mode === "healed" ? "trace.healed" : "trace.recorded",
           `${action.useCase}:${action.client}`,
@@ -157,92 +277,5 @@ export async function runJob(
     }
   }
 
-  const sessionUrl = result.sessionReplayUrl;
-  const sessionId = result.sessionId;
-  const extracted = result.data;
-
-  // 5. Normalize outcome.
-  if (result.status === "error") {
-    return base({
-      status: "error",
-      sessionUrl,
-      sessionId,
-      stepsUsed: result.stepsUsed,
-      mode,
-      traceVersion,
-      error: { code: "RUN_ERROR", message: result.error?.message ?? result.summary },
-    });
-  }
-  if (result.status === "timeout") {
-    return base({
-      status: "error",
-      sessionUrl,
-      sessionId,
-      stepsUsed: result.stepsUsed,
-      mode,
-      traceVersion,
-      error: { code: "TIMEOUT", message: "The run exceeded its wall-clock timeout." },
-    });
-  }
-  if (result.status === "blocked") {
-    return base({
-      status: "error",
-      sessionUrl,
-      sessionId,
-      stepsUsed: result.stepsUsed,
-      mode,
-      traceVersion,
-      error: {
-        code: "ACTION_BLOCKED",
-        message: "An action outside the read-only method allowlist was blocked.",
-      },
-    });
-  }
-
-  // Generic negative-outcome signals (present for portals that extract them).
-  const matchVerified = boolField(extracted, "matchVerified");
-  const ntpDateFound = boolField(extracted, "ntpDateFound");
-  if (matchVerified === false) {
-    return base({
-      status: "failure",
-      sessionUrl,
-      sessionId,
-      stepsUsed: result.stepsUsed,
-      mode,
-      traceVersion,
-      data: extracted,
-      error: {
-        code: "MATCH_FAILED",
-        message: "No record matched on name and address.",
-        fields: ["name", "address"],
-      },
-    });
-  }
-  if (ntpDateFound === false) {
-    return base({
-      status: "failure",
-      sessionUrl,
-      sessionId,
-      stepsUsed: result.stepsUsed,
-      mode,
-      traceVersion,
-      data: extracted,
-      error: {
-        code: "NTP_FIELD_NOT_FOUND",
-        message: "NTP Date field was not found on the record.",
-        fields: ["ntpDate"],
-      },
-    });
-  }
-
-  return base({
-    status: result.success ? "success" : "failure",
-    sessionUrl,
-    sessionId,
-    stepsUsed: result.stepsUsed,
-    mode,
-    traceVersion,
-    data: extracted,
-    error: result.success ? undefined : { code: "GOAL_NOT_COMPLETED", message: result.summary },
-  });
+  return envelope;
 }
