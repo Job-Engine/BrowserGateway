@@ -39,7 +39,7 @@ variables; self-hosted Stagehand, never hosted Browserbase agents; async + poll;
 the trust boundary is the gateway process; extract schemas are locked per action and
 never overridden per client; read-only, enforced in code by a method allowlist.
 
-## Where the code stands right now (updated 2026-07-13)
+## Where the code stands right now (updated 2026-07-15)
 
 v2 is built and green on branch `feat/gateway-v2`. STAB, MVP, WL, and OPS epics
 are done: TypeScript 5.9 pinned, hosted-agent path deleted, C1/C2/C3, S1-S6,

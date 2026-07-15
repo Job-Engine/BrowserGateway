@@ -35,7 +35,7 @@ The Browser Automation Gateway is JobEngine's internal service that gives applic
         "durationMs": "number",
         "attempts": "number",
         "stepsUsed": "number",
-        "mode": "replay | learned | healed (additive; present once an action has a replay plan)",
+        "mode": "replay | learned | healed (additive; present on every run that reaches the browser)",
         "traceVersion": "number (additive; the replay trace version used or recorded)"
       }
     },
