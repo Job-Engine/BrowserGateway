@@ -73,6 +73,18 @@ export interface CatalogueResponse {
   pairs: CataloguePair[];
 }
 
+/** A replayable Stagehand trace recorded for one useCase-client pair. */
+export interface TraceSummary {
+  useCase: string;
+  client: string;
+  version: number;
+  state: "active" | "retired";
+  healCount: number;
+  stepCount: number;
+  lastSuccessAt: string | null;
+  createdAt: string;
+}
+
 export interface Caller {
   id: string;
   name: string;

@@ -11,7 +11,7 @@ import { useToast } from "../components/Toast";
 import { useAsync } from "../lib/useAsync";
 import { useRoute, buildHash } from "../lib/router";
 import { relativeTime, formatClock } from "../lib/format";
-import type { ActionState, CataloguePair, JobRow } from "../api/types";
+import type { ActionState, CataloguePair, JobRow, TraceSummary } from "../api/types";
 
 interface ActionGroup {
   useCase: string;
@@ -25,6 +25,64 @@ function canaryCell(status: string | null) {
   if (status === "success") return <OutcomePill status="success" label="success" />;
   if (status === "failure") return <OutcomePill status="failure" label="failure" />;
   return <OutcomePill status="error" label={status} />;
+}
+
+/** Replay traces recorded for one useCase, across all its clients. Invalidating
+ * one drops the learned path; the next run for that pair falls back to the LLM. */
+function TracesSection({ useCase }: { useCase: string }) {
+  const { api } = useConfig();
+  const { push } = useToast();
+  const traces = useAsync(() => api.traces(useCase), `traces:${useCase}`);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const invalidate = (client: string) => {
+    setBusy(client);
+    api
+      .invalidateTrace(useCase, client)
+      .then(() => {
+        push(`Trace for ${useCase} / ${client} invalidated`);
+        traces.reload();
+      })
+      .catch((e: unknown) => push(e instanceof Error ? e.message : String(e), false))
+      .finally(() => setBusy(null));
+  };
+
+  const active: TraceSummary[] = (traces.data?.traces ?? []).filter((t) => t.state === "active");
+
+  return (
+    <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
+      <div className="eyebrow" style={{ marginBottom: 8 }}>
+        Replay traces
+      </div>
+      {traces.loading && !traces.data ? (
+        <Loading label="Loading traces" />
+      ) : active.length === 0 ? (
+        <div className="xs muted">No active trace. Next run learns via LLM.</div>
+      ) : (
+        <div className="vstack" style={{ gap: 8 }}>
+          {active.map((t) => (
+            <div className="hstack" key={`${t.client}-${t.version}`}>
+              <span className="tag tag-mono">{t.client}</span>
+              <span className="xs muted">
+                v{t.version} &middot; {t.stepCount} step{t.stepCount === 1 ? "" : "s"} &middot;{" "}
+                {t.healCount} heal{t.healCount === 1 ? "" : "s"} &middot; last success{" "}
+                {relativeTime(t.lastSuccessAt)}
+              </span>
+              <span className="spacer" />
+              <button
+                className="btn btn-sm btn-ghost"
+                disabled={busy === t.client}
+                onClick={() => invalidate(t.client)}
+              >
+                <Icon name="trash" />
+                Invalidate
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function Catalogue() {
@@ -292,6 +350,8 @@ export function Catalogue() {
                 </table>
               </div>
             </div>
+
+            <TracesSection useCase={g.useCase} />
           </div>
         ))
       )}

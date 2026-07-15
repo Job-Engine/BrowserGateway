@@ -13,6 +13,7 @@ import type {
   OkResult,
   RunCanariesResponse,
   StatsResponse,
+  TraceSummary,
   TransitionFailure,
   ValidateFailure,
 } from "./types";
@@ -151,6 +152,14 @@ export function makeApi(config: GatewayConfig) {
     runCanaries: () =>
       apiFetch<RunCanariesResponse>(config, "/admin/canaries/run", { method: "POST" }),
     audit: (limit = 100) => apiFetch<AuditResponse>(config, `/admin/audit${q({ limit })}`),
+    traces: (useCase?: string) =>
+      apiFetch<{ traces: TraceSummary[] }>(config, `/admin/traces${q({ useCase })}`),
+    invalidateTrace: (useCase: string, client: string) =>
+      apiFetch<{ ok: boolean }>(
+        config,
+        `/admin/traces/${encodeURIComponent(useCase)}/${encodeURIComponent(client)}/invalidate`,
+        { method: "POST" },
+      ),
   };
 }
 
