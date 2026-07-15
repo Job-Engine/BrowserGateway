@@ -32,6 +32,10 @@ export interface JobMeta {
   durationMs: number;
   attempts: number;
   stepsUsed?: number;
+  /** How the run was driven: deterministic replay, LLM learn, or heal. Additive. */
+  mode?: "replay" | "learned" | "healed";
+  /** Trace version used (replay) or recorded (learned/healed). Additive. */
+  traceVersion?: number;
 }
 
 export interface JobEnvelope {

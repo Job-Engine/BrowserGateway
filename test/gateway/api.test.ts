@@ -4,11 +4,13 @@ import { createJobStore, type JobStore } from "../../src/gateway/jobs/store.js";
 import { createAuthStore } from "../../src/gateway/auth/tokens.js";
 import { createLogger } from "../../src/gateway/observability/logger.js";
 import { createRegistry } from "../../src/gateway/registry.js";
+import { createTraceStore, type TraceStore } from "../../src/gateway/traces.js";
 import { buildApp, type App } from "../../src/gateway/api/app.js";
 
 let db: TestDb;
 let app: App;
 let store: JobStore;
+let traces: TraceStore;
 let scopedToken: string;
 let otherToken: string;
 let lgcycoToken: string;
@@ -32,7 +34,8 @@ beforeAll(async () => {
   otherToken = (await auth.issueToken("app-other", ["lightreach.ntpDate:default"])).token;
   lgcycoToken = (await auth.issueToken("app-lgcyco", ["lightreach.ntpDate:lgcyco"])).token;
   adminToken = (await auth.issueToken("ops-admin", ["*:*"], { isAdmin: true })).token;
-  app = buildApp({ store, auth, logger: createLogger("silent"), registry });
+  traces = createTraceStore(db.pool);
+  app = buildApp({ store, auth, logger: createLogger("silent"), registry, traces });
   await app.ready();
 });
 
@@ -429,5 +432,51 @@ describe("GET /openapi.json and admin surface", () => {
     expect(live.clientState).toBe("live");
     const disabled = pairs.find((p: { client: string }) => p.client === "lgcyco");
     expect(disabled.clientState).toBe("disabled");
+  });
+});
+
+describe("admin traces", () => {
+  it("lists trace summaries without exposing steps", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/admin/traces?useCase=lightreach.ntpDate",
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { traces: Array<Record<string, unknown>> };
+    for (const t of body.traces) {
+      expect(t).not.toHaveProperty("steps");
+      expect(t).toHaveProperty("stepCount");
+      expect(t).toHaveProperty("healCount");
+    }
+  });
+
+  it("invalidates the active trace and 404s when none exists", async () => {
+    // Seed one active trace directly through the store used by the app.
+    await traces.saveTrace({
+      useCase: "lightreach.ntpDate",
+      client: "spartan",
+      steps: [],
+      readSelectors: {},
+      activate: true,
+      secretValues: [],
+    });
+    const ok = await app.inject({
+      method: "POST",
+      url: "/admin/traces/lightreach.ntpDate/spartan/invalidate",
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(ok.statusCode).toBe(200);
+    const again = await app.inject({
+      method: "POST",
+      url: "/admin/traces/lightreach.ntpDate/spartan/invalidate",
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(again.statusCode).toBe(404);
+  });
+
+  it("requires admin", async () => {
+    const res = await app.inject({ method: "GET", url: "/admin/traces" });
+    expect([401, 403]).toContain(res.statusCode);
   });
 });

@@ -50,6 +50,15 @@ const envelopeSchema = {
         durationMs: { type: "integer" },
         attempts: { type: "integer" },
         stepsUsed: { type: "integer" },
+        mode: {
+          type: "string",
+          enum: ["replay", "learned", "healed"],
+          description: "How the run was driven. Additive.",
+        },
+        traceVersion: {
+          type: "integer",
+          description: "Replay trace version used or recorded. Additive.",
+        },
       },
     },
   },
@@ -149,7 +158,29 @@ export function buildOpenApiDocument() {
       },
       "/admin": {
         description:
-          "Admin surface (isAdmin tokens): /admin/stats, /admin/jobs, /admin/tokens, /admin/catalogue lifecycle transitions, /admin/canaries/run, /admin/audit.",
+          "Admin surface (isAdmin tokens): /admin/stats, /admin/jobs, /admin/tokens, /admin/catalogue lifecycle transitions, /admin/canaries/run, /admin/audit, /admin/traces.",
+      },
+      "/admin/traces": {
+        get: {
+          summary: "List replay trace summaries (admin)",
+          parameters: [
+            { name: "useCase", in: "query", required: false, schema: { type: "string" } },
+          ],
+          responses: { "200": { description: "Trace summaries" } },
+        },
+      },
+      "/admin/traces/{useCase}/{client}/invalidate": {
+        post: {
+          summary: "Retire the active replay trace; the next job relearns (admin)",
+          parameters: [
+            { name: "useCase", in: "path", required: true, schema: { type: "string" } },
+            { name: "client", in: "path", required: true, schema: { type: "string" } },
+          ],
+          responses: {
+            "200": { description: "Invalidated" },
+            "404": { description: "No active trace" },
+          },
+        },
       },
     },
     "x-actions": Object.values(CATALOGUE).map((entry) => ({

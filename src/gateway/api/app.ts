@@ -11,6 +11,7 @@ import type { JobStore } from "../jobs/store.js";
 import type { Logger } from "../observability/logger.js";
 import type { Registry } from "../registry.js";
 import type { CanaryScheduler } from "../canary/scheduler.js";
+import type { TraceStore } from "../traces.js";
 import { registerAdminRoutes } from "./admin.js";
 import { buildOpenApiDocument } from "./openapi.js";
 
@@ -26,6 +27,7 @@ export interface AppDeps {
   logger: Logger;
   registry: Registry;
   canary?: CanaryScheduler;
+  traces: TraceStore;
 }
 
 const submitJobSchema = z.object({

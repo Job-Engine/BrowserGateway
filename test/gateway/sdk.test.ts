@@ -4,6 +4,7 @@ import { createJobStore, type JobStore } from "../../src/gateway/jobs/store.js";
 import { createAuthStore } from "../../src/gateway/auth/tokens.js";
 import { createLogger } from "../../src/gateway/observability/logger.js";
 import { createRegistry } from "../../src/gateway/registry.js";
+import { createTraceStore } from "../../src/gateway/traces.js";
 import { createQueueWorker, type QueueWorker } from "../../src/gateway/queue/worker.js";
 import { buildApp, type App } from "../../src/gateway/api/app.js";
 import { ERROR_CODES as SERVER_ERROR_CODES } from "../../src/gateway/api/openapi.js";
@@ -34,7 +35,8 @@ beforeAll(async () => {
   );
   token = (await auth.issueToken("sdk-app", ["lightreach.ntpDate:default"])).token;
   const logger = createLogger("silent");
-  app = buildApp({ store, auth, logger, registry });
+  const traces = createTraceStore(db.pool);
+  app = buildApp({ store, auth, logger, registry, traces });
   worker = createQueueWorker({
     store,
     logger,

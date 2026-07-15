@@ -81,7 +81,7 @@ export async function main(): Promise<void> {
     slackWebhookUrl: process.env.SLACK_WEBHOOK_URL,
   });
 
-  const app = buildApp({ store, auth, logger, registry, canary });
+  const app = buildApp({ store, auth, logger, registry, canary, traces });
   queue.start();
   canary.start();
   await app.listen({ port: intEnv("PORT", 8080), host: "0.0.0.0" });

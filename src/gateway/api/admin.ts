@@ -7,12 +7,14 @@ import type { AuthStore } from "../auth/tokens.js";
 import type { JobStore } from "../jobs/store.js";
 import type { Registry } from "../registry.js";
 import type { CanaryScheduler } from "../canary/scheduler.js";
+import type { TraceStore, TraceRow } from "../traces.js";
 
 export interface AdminDeps {
   store: JobStore;
   auth: AuthStore;
   registry: Registry;
   canary?: CanaryScheduler;
+  traces: TraceStore;
 }
 
 const issueTokenSchema = z.object({
@@ -130,6 +132,31 @@ export function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps): void
         const { limit } = req.query as { limit?: string };
         const entries = await deps.registry.listAudit(Math.min(Number(limit) || 100, 500));
         return { entries };
+      });
+
+      const summary = (t: TraceRow) => ({
+        useCase: t.useCase,
+        client: t.client,
+        version: t.version,
+        state: t.state,
+        healCount: t.healCount,
+        stepCount: t.steps.length,
+        lastSuccessAt: t.lastSuccessAt,
+        createdAt: t.createdAt,
+      });
+
+      admin.get("/traces", async (req) => {
+        const { useCase } = req.query as { useCase?: string };
+        const rows = await deps.traces.list(useCase);
+        return { traces: rows.map(summary) };
+      });
+
+      admin.post("/traces/:useCase/:client/invalidate", async (req, reply) => {
+        const { useCase, client } = req.params as { useCase: string; client: string };
+        const ok = await deps.traces.invalidate(useCase, client);
+        if (!ok) return reply.code(404).send({ error: "no active trace" });
+        await deps.registry.audit("admin", "trace.invalidated", `${useCase}/${client}`);
+        return { ok: true };
       });
     },
     { prefix: "/admin" },
