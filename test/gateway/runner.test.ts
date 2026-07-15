@@ -270,7 +270,7 @@ describe("runJob with traces", () => {
     expect((calls.saved[0] as { healed?: boolean }).healed).toBe(true);
     expect(audit).toHaveBeenCalledWith(
       "trace.healed",
-      "lightreach.ntpDate/spartan",
+      "lightreach.ntpDate:spartan",
       expect.anything(),
     );
   });

@@ -144,7 +144,7 @@ export async function runJob(
         traceVersion = saved.version;
         await deps.audit?.(
           mode === "healed" ? "trace.healed" : "trace.recorded",
-          `${action.useCase}/${action.client}`,
+          `${action.useCase}:${action.client}`,
           {
             version: saved.version,
             activated: result.traceDraft.complete,

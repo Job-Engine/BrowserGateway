@@ -155,7 +155,7 @@ export function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps): void
         const { useCase, client } = req.params as { useCase: string; client: string };
         const ok = await deps.traces.invalidate(useCase, client);
         if (!ok) return reply.code(404).send({ error: "no active trace" });
-        await deps.registry.audit("admin", "trace.invalidated", `${useCase}/${client}`);
+        await deps.registry.audit(req.caller.name, "trace.invalidated", `${useCase}:${client}`);
         return { ok: true };
       });
     },

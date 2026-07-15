@@ -437,6 +437,25 @@ describe("GET /openapi.json and admin surface", () => {
 
 describe("admin traces", () => {
   it("lists trace summaries without exposing steps", async () => {
+    // Seed one active trace directly through the store used by the app so
+    // the no-leak assertions below run against real data.
+    await traces.saveTrace({
+      useCase: "lightreach.ntpDate",
+      client: "spartan",
+      steps: [
+        {
+          selector: "xpath=//a",
+          method: "click",
+          arguments: [],
+          description: "open record",
+          paramTemplate: null,
+        },
+      ],
+      readSelectors: { matchedName: "xpath=//h1" },
+      activate: true,
+      secretValues: [],
+    });
+
     const res = await app.inject({
       method: "GET",
       url: "/admin/traces?useCase=lightreach.ntpDate",
@@ -444,23 +463,19 @@ describe("admin traces", () => {
     });
     expect(res.statusCode).toBe(200);
     const body = res.json() as { traces: Array<Record<string, unknown>> };
+    expect(body.traces.length).toBeGreaterThan(0);
     for (const t of body.traces) {
       expect(t).not.toHaveProperty("steps");
-      expect(t).toHaveProperty("stepCount");
+      expect(t).not.toHaveProperty("readSelectors");
+      expect(t).toHaveProperty("stepCount", 1);
       expect(t).toHaveProperty("healCount");
+      expect(t).toHaveProperty("version");
+      expect(t).toHaveProperty("state");
     }
   });
 
   it("invalidates the active trace and 404s when none exists", async () => {
-    // Seed one active trace directly through the store used by the app.
-    await traces.saveTrace({
-      useCase: "lightreach.ntpDate",
-      client: "spartan",
-      steps: [],
-      readSelectors: {},
-      activate: true,
-      secretValues: [],
-    });
+    // Relies on the active trace seeded in the preceding test.
     const ok = await app.inject({
       method: "POST",
       url: "/admin/traces/lightreach.ntpDate/spartan/invalidate",
