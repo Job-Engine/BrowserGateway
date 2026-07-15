@@ -1,3 +1,4 @@
+import type { ReplayPlan } from "../replay.js";
 import { z } from "zod";
 
 /**
@@ -26,6 +27,11 @@ export interface CatalogueEntry<I extends z.ZodTypeAny = z.ZodTypeAny> {
   buildGoal: (input: Record<string, unknown>, ctx: GoalContext) => string;
   /** Whether this portal requires a login step. */
   requiresLogin: boolean;
+  /**
+   * Deterministic replay configuration. Entries without one never replay
+   * (every run takes the LLM learn path).
+   */
+  replay?: ReplayPlan;
   /**
    * Whitelabel clients allowed on this action. "default" is always allowed
    * even when absent here. Overrides are navigation-only by construction:
@@ -66,6 +72,7 @@ export interface ResolvedAction {
   requiresLogin: boolean;
   credentialItem: string;
   timeoutMs?: number;
+  replay?: ReplayPlan;
   buildGoal: (input: Record<string, unknown>, ctx: GoalContext) => string;
 }
 
@@ -96,6 +103,7 @@ export function resolveAction(useCase: string, client: string): ResolvedAction {
     requiresLogin: entry.requiresLogin,
     credentialItem,
     timeoutMs: override?.timeoutMs,
+    replay: entry.replay,
     buildGoal: (input, ctx) => {
       const parts = [entry.buildGoal(input, ctx)];
       const labels = Object.entries(override?.labelMap ?? {});
@@ -145,6 +153,15 @@ export const CATALOGUE: Record<string, CatalogueEntry> = {
     inputSchema: lightreachInput,
     extractSchema: lightreachExtract,
     requiresLogin: true,
+    replay: {
+      reads: {
+        matchedName: "the customer name shown on the open record",
+        matchedAddress: "the service address shown on the open record",
+        ntpDate: 'the date next to the "Notice to Proceed" milestone in the Progress Tracker',
+      },
+      verify: { matchedName: "name", matchedAddress: "address" },
+      assertTrue: ["matchVerified", "ntpDateFound"],
+    },
     // Procedure folded from the retired hosted-agent spec (docs/lightreach-ntp-agent.md).
     buildGoal: (input, ctx) =>
       [

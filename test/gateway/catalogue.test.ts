@@ -118,3 +118,16 @@ describe("resolveAction (WL override merge)", () => {
     expect(action.buildGoal(input, { hasOtp: false })).toContain("sidebar search");
   });
 });
+
+describe("replay plan", () => {
+  it("carries the replay plan through resolveAction for every client", () => {
+    const action = resolveAction("lightreach.ntpDate", "spartan");
+    expect(action.replay).toBeDefined();
+    expect(action.replay!.verify).toEqual({
+      matchedName: "name",
+      matchedAddress: "address",
+    });
+    expect(action.replay!.assertTrue).toEqual(["matchVerified", "ntpDateFound"]);
+    expect(Object.keys(action.replay!.reads)).toEqual(["matchedName", "matchedAddress", "ntpDate"]);
+  });
+});
