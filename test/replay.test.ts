@@ -1,15 +1,4 @@
-import { describe, expect, it } from "vitest";
-import {
-  fuzzyMatch,
-  normalizeIdentity,
-  parameterizeSteps,
-  replayTrace,
-  resolveStep,
-  type ReplayPlan,
-  type ReplayRunOptions,
-  type ReplayTrace,
-  type TraceStep,
-} from "../src/replay.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   READ_ONLY_METHODS,
   type ActionRecord,
@@ -17,6 +6,25 @@ import {
   type BrowserAgent,
   type ObservedAction,
 } from "../src/types.js";
+
+const sessionAgent = vi.hoisted(() => ({ current: null as BrowserAgent | null }));
+vi.mock("../src/browser.js", () => ({
+  createSession: vi.fn(async () => sessionAgent.current),
+}));
+
+import { z } from "zod";
+import {
+  fuzzyMatch,
+  normalizeIdentity,
+  parameterizeSteps,
+  replayTrace,
+  resolveStep,
+  runDeterministic,
+  type ReplayPlan,
+  type ReplayRunOptions,
+  type ReplayTrace,
+  type TraceStep,
+} from "../src/replay.js";
 
 function record(
   action: Partial<ActionRecord["action"]>,
@@ -361,5 +369,173 @@ describe("replayTrace", () => {
       expect(out.reason).not.toContain("hunter2");
       expect(out.reason).toContain("***");
     }
+  });
+});
+
+function learnAgent(opts: {
+  planScript: Array<{ isDone: boolean; instruction: string }>;
+  observed: ObservedAction;
+  extractResult: Record<string, unknown>;
+  groundSelector?: string | null;
+}): BrowserAgent {
+  let extractCalls = 0;
+  return {
+    goto: async () => {},
+    observe: async (instruction: string) => {
+      if (instruction.startsWith("Find ")) {
+        return opts.groundSelector === null
+          ? []
+          : [{ selector: opts.groundSelector ?? "xpath=//h1", description: "found" }];
+      }
+      return [opts.observed];
+    },
+    act: async () => ({ success: true, message: "ok" }),
+    extract: (async (_instruction: string) => {
+      extractCalls++;
+      // First N calls are the planner; the loop's final extract returns data.
+      const plan = opts.planScript[extractCalls - 1];
+      if (plan) return { reasoning: "r", isDone: plan.isDone, instruction: plan.instruction };
+      return opts.extractResult;
+    }) as unknown as BrowserAgent["extract"],
+    readText: async () => null,
+    close: async () => {},
+  };
+}
+
+const EXTRACT_SCHEMA = z.object({
+  matchVerified: z.boolean(),
+  matchedName: z.string().nullable(),
+  matchedAddress: z.string().nullable(),
+  ntpDateFound: z.boolean(),
+  ntpDate: z.string().nullable(),
+});
+
+afterEach(() => {
+  sessionAgent.current = null;
+});
+
+describe("runDeterministic (learn path)", () => {
+  const options = {
+    url: "https://example.test",
+    goal: "read the record",
+    input: { name: "Jason Marshall", address: "205 Morningside Ct" },
+    credentials: { username: "u", password: "p" },
+    extractSchema: EXTRACT_SCHEMA,
+    allowedMethods: READ_ONLY_METHODS,
+    timeoutMs: 30_000,
+    replayPlan: PLAN,
+  };
+
+  it("learns, grounds read selectors, and returns a complete draft", async () => {
+    sessionAgent.current = learnAgent({
+      planScript: [
+        { isDone: false, instruction: "click the Jason Marshall link" },
+        { isDone: true, instruction: "" },
+      ],
+      observed: {
+        selector: 'xpath=//a[contains(., "Jason Marshall")]',
+        description: "the record link",
+        method: "click",
+        arguments: [],
+      },
+      extractResult: {
+        matchVerified: true,
+        matchedName: "Jason Marshall",
+        matchedAddress: "205 Morningside Ct",
+        ntpDateFound: true,
+        ntpDate: "Jul 11, 2026",
+      },
+    });
+    const result = await runDeterministic(options);
+    expect(result.mode).toBe("learned");
+    expect(result.success).toBe(true);
+    expect(result.traceDraft?.complete).toBe(true);
+    expect(result.traceDraft?.steps[0].paramTemplate?.selector).toBe(
+      'xpath=//a[contains(., "%name%")]',
+    );
+    expect(Object.keys(result.traceDraft?.readSelectors ?? {})).toEqual(Object.keys(PLAN.reads));
+  });
+
+  it("marks the draft incomplete when grounding fails", async () => {
+    sessionAgent.current = learnAgent({
+      planScript: [{ isDone: true, instruction: "" }],
+      observed: { selector: "xpath=//a", description: "x", method: "click", arguments: [] },
+      extractResult: {
+        matchVerified: true,
+        matchedName: "Jason Marshall",
+        matchedAddress: "205 Morningside Ct",
+        ntpDateFound: true,
+        ntpDate: null,
+      },
+      groundSelector: null,
+    });
+    const result = await runDeterministic(options);
+    expect(result.traceDraft?.complete).toBe(false);
+  });
+
+  it("returns no draft when the run does not complete", async () => {
+    // Planner immediately proposes an action whose method is blocked.
+    sessionAgent.current = learnAgent({
+      planScript: [{ isDone: false, instruction: "upload a file" }],
+      observed: { selector: "xpath=//a", description: "x", method: "upload", arguments: [] },
+      extractResult: {},
+    });
+    const result = await runDeterministic(options);
+    expect(result.success).toBe(false);
+    expect(result.traceDraft).toBeNull();
+  });
+});
+
+describe("runDeterministic (replay path)", () => {
+  it("replays when a trace is provided and reports mode replay", async () => {
+    sessionAgent.current = fakeReplayAgent({ texts: OK_TEXTS }).agent;
+    const result = await runDeterministic({
+      url: "https://example.test",
+      goal: "unused on replay",
+      input: INPUT,
+      credentials: { username: "u", password: "p" },
+      extractSchema: EXTRACT_SCHEMA,
+      allowedMethods: READ_ONLY_METHODS,
+      timeoutMs: 30_000,
+      replayPlan: PLAN,
+      trace: TRACE,
+    });
+    expect(result.mode).toBe("replay");
+    expect(result.success).toBe(true);
+    expect(EXTRACT_SCHEMA.safeParse(result.data).success).toBe(true);
+  });
+
+  it("falls back to learn in the same call when replay fails", async () => {
+    // Agent whose readText returns a mismatching name forces escalation,
+    // then the learn script answers.
+    const base = learnAgent({
+      planScript: [{ isDone: true, instruction: "" }],
+      observed: { selector: "xpath=//a", description: "x", method: "click", arguments: [] },
+      extractResult: {
+        matchVerified: true,
+        matchedName: "Maria Lopez",
+        matchedAddress: "10 Oak Street",
+        ntpDateFound: true,
+        ntpDate: null,
+      },
+    });
+    sessionAgent.current = {
+      ...base,
+      readText: async (sel: string) => (sel === "xpath=//h1" ? "Someone Else" : "10 Oak Street"),
+    };
+    const result = await runDeterministic({
+      url: "https://example.test",
+      goal: "read the record",
+      input: INPUT,
+      credentials: { username: "u", password: "p" },
+      extractSchema: EXTRACT_SCHEMA,
+      allowedMethods: READ_ONLY_METHODS,
+      timeoutMs: 30_000,
+      replayPlan: PLAN,
+      trace: TRACE,
+    });
+    expect(result.mode).toBe("learned");
+    expect(result.replayFailureReason).toMatch(/mismatch/);
+    expect(result.success).toBe(true);
   });
 });

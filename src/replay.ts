@@ -1,7 +1,10 @@
 // Deterministic replay: trace types, input parameterization, identity
 // matching, the replay executor, and the learn wrapper that records traces.
 // Sanctioned core change 5 (see docs/superpowers/specs/2026-07-14-deterministic-replay-design.md).
-import type { ActionRecord, BrowserAgent, ObservedAction } from "./types.js";
+import type { z } from "zod";
+import { createSession } from "./browser.js";
+import { runLoop } from "./loop.js";
+import type { ActionRecord, AgentStatus, BrowserAgent, ObservedAction } from "./types.js";
 
 export interface TraceStep {
   selector: string;
@@ -291,4 +294,206 @@ export async function replayTrace(options: ReplayRunOptions): Promise<ReplayOutc
 
   for (const field of options.plan.assertTrue) data[field] = true;
   return { ok: true, data, stepsUsed };
+}
+
+// Duplicated deliberately: src/index.ts must never import src/replay.ts, so
+// the default model value is repeated here rather than imported.
+const REPLAY_DEFAULT_MODEL = "anthropic/claude-sonnet-4-6";
+
+export interface TraceDraft {
+  steps: TraceStep[];
+  readSelectors: Record<string, string>;
+  /** True when every plan.reads field grounded to a selector. */
+  complete: boolean;
+}
+
+export interface DeterministicRunOptions {
+  url: string;
+  goal: string;
+  input: Record<string, string>;
+  credentials: Record<string, string>;
+  extractSchema?: z.ZodType;
+  allowedMethods: readonly string[];
+  timeoutMs: number;
+  model?: string;
+  replayPlan?: ReplayPlan;
+  /** When present (and a replayPlan exists), replay is attempted first. */
+  trace?: ReplayTrace;
+}
+
+export interface DeterministicRunResult {
+  mode: "replay" | "learned";
+  status: AgentStatus;
+  success: boolean;
+  data?: unknown;
+  actionsLog: ActionRecord[];
+  stepsUsed: number;
+  sessionId?: string;
+  sessionReplayUrl?: string;
+  summary: string;
+  error?: { message: string };
+  /** Recorded on successful learn runs with a replayPlan; null otherwise. */
+  traceDraft: TraceDraft | null;
+  /** Why replay escalated, when it did. */
+  replayFailureReason?: string;
+}
+
+/**
+ * The gateway's single browser entry point. Replay first when a trace is
+ * given; learn (LLM loop) otherwise or on replay failure, recording a trace
+ * draft on success. Owns the session and the wall-clock budget.
+ */
+export async function runDeterministic(
+  options: DeterministicRunOptions,
+): Promise<DeterministicRunResult> {
+  const deadline = Date.now() + options.timeoutMs;
+  const env = (process.env.WAA_ENV as "BROWSERBASE" | "LOCAL" | undefined) ?? "BROWSERBASE";
+  let agent;
+  try {
+    agent = await createSession({
+      env,
+      model: options.model ?? REPLAY_DEFAULT_MODEL,
+      sessionTimeoutSeconds: Math.ceil(options.timeoutMs / 1000) + 120,
+    });
+  } catch (e) {
+    return {
+      mode: options.trace ? "replay" : "learned",
+      status: "error",
+      success: false,
+      actionsLog: [],
+      stepsUsed: 0,
+      summary: "Failed to start the browser session.",
+      error: { message: e instanceof Error ? e.message : String(e) },
+      traceDraft: null,
+    };
+  }
+
+  const variables = { ...options.input, ...options.credentials };
+  let replayFailureReason: string | undefined;
+
+  try {
+    // 1. Replay when possible.
+    if (options.trace && options.replayPlan) {
+      const outcome = await replayTrace({
+        agent,
+        url: options.url,
+        trace: options.trace,
+        plan: options.replayPlan,
+        input: options.input,
+        credentials: options.credentials,
+        allowedMethods: options.allowedMethods,
+        deadline,
+      });
+      if (outcome.ok) {
+        const parsed = options.extractSchema?.safeParse(outcome.data);
+        if (!options.extractSchema || parsed?.success) {
+          return {
+            mode: "replay",
+            status: "completed",
+            success: true,
+            data: parsed?.success ? parsed.data : outcome.data,
+            actionsLog: [],
+            stepsUsed: outcome.stepsUsed,
+            sessionId: agent.sessionId,
+            sessionReplayUrl: agent.sessionReplayUrl,
+            summary: `Replayed ${outcome.stepsUsed} step(s) deterministically.`,
+            traceDraft: null,
+          };
+        }
+        replayFailureReason = "replay data failed schema validation";
+      } else {
+        replayFailureReason = outcome.reason;
+      }
+    }
+
+    // 2. Learn (LLM loop). Reuses the same session; the loop navigates itself.
+    const remaining = deadline - Date.now();
+    if (remaining < 5_000) {
+      return {
+        mode: "learned",
+        status: "timeout",
+        success: false,
+        actionsLog: [],
+        stepsUsed: 0,
+        sessionId: agent.sessionId,
+        sessionReplayUrl: agent.sessionReplayUrl,
+        summary: "No wall-clock budget left after replay failed.",
+        error: { message: replayFailureReason ?? "budget exhausted" },
+        traceDraft: null,
+        replayFailureReason,
+      };
+    }
+
+    const controller = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, remaining);
+
+    let loop;
+    try {
+      loop = await runLoop({
+        agent,
+        url: options.url,
+        goal: options.goal,
+        variables,
+        secretValues: Object.values(options.credentials).filter((v) => v.length > 0),
+        extractSchema: options.extractSchema,
+        allowedMethods: options.allowedMethods,
+        maxSteps: 25,
+        maxObserveRetries: 2,
+        maxConsecutiveFailures: 3,
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+
+    const status: AgentStatus = timedOut && loop.status === "aborted" ? "timeout" : loop.status;
+    const success = status === "completed";
+
+    // 3. Ground read selectors while the record page is still open.
+    let traceDraft: TraceDraft | null = null;
+    if (success && options.replayPlan) {
+      const readSelectors: Record<string, string> = {};
+      let complete = true;
+      for (const [field, hint] of Object.entries(options.replayPlan.reads)) {
+        try {
+          const [obs] = await agent.observe(
+            `Find ${hint}. Do not interact with it, only locate it.`,
+            variables,
+          );
+          if (obs?.selector) readSelectors[field] = obs.selector;
+          else complete = false;
+        } catch {
+          complete = false;
+        }
+      }
+      traceDraft = {
+        steps: parameterizeSteps(loop.actionsLog, options.input),
+        readSelectors,
+        complete,
+      };
+    }
+
+    return {
+      mode: "learned",
+      status,
+      success,
+      data: loop.extractedData,
+      actionsLog: loop.actionsLog,
+      stepsUsed: loop.stepsUsed,
+      sessionId: agent.sessionId,
+      sessionReplayUrl: agent.sessionReplayUrl,
+      summary: success
+        ? `Goal completed in ${loop.stepsUsed} step(s).`
+        : `Stopped with status ${status}.`,
+      error: loop.error ? { message: loop.error.message } : undefined,
+      traceDraft,
+      replayFailureReason,
+    };
+  } finally {
+    await agent.close().catch(() => {});
+  }
 }
