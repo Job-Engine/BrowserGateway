@@ -43,15 +43,19 @@ never overridden per client; read-only, enforced in code by a method allowlist.
 
 v2 is built and green on branch `feat/gateway-v2`. STAB, MVP, WL, and OPS epics
 are done: TypeScript 5.9 pinned, hosted-agent path deleted, C1/C2/C3, S1-S6,
-M1-M5 fixed with tests; the four sanctioned core changes applied (sessionId
-from the adapter, wall-clock timeout, one free re-plan on observe failure,
-read-only method allowlist). `src/gateway/` is the v2 shell: Fastify, Postgres
-job store + skip-locked queue (caps, deadlines, per-credential serialization),
-per-caller hashed scoped tokens, pino redaction, lifecycle registry with the
-first-live-run rule, canaries, cost columns, admin API, `GET /openapi.json`,
-and `packages/gateway-client` (typed SDK). 116+ tests, coverage gate 80 percent
-on `src/gateway` (actual ~93). Run: `docker compose up -d`, `.env` from example,
-`npm run gateway`.
+M1-M5 fixed with tests; five sanctioned core changes applied (sessionId from
+the adapter, wall-clock timeout, one free re-plan on observe failure,
+read-only method allowlist, and the `readText` adapter primitive plus
+`src/replay.ts` for deterministic replay). `src/gateway/` is the v2 shell:
+Fastify, Postgres job store + skip-locked queue (caps, deadlines,
+per-credential serialization), per-caller hashed scoped tokens, pino
+redaction, lifecycle registry with the first-live-run rule, canaries, cost
+columns, admin API, `GET /openapi.json`, and `packages/gateway-client`
+(typed SDK). Deterministic replay is built: traces are recorded per useCase
+and client, replayed with zero LLM calls, and healed (relearned and
+re-recorded in the same job) on portal drift. 116+ tests, coverage gate 80
+percent on `src/gateway` (actual ~93). Run: `docker compose up -d`, `.env`
+from example, `npm run gateway`.
 
 The Phase 1 spec lives in the local clone `~/Desktop/product-ops-planning` on
 branch `browser-automation-gateway-spec` (32 stories, 5 epics, traceability in
@@ -97,9 +101,11 @@ build running compiled output as non-root with HEALTHCHECK and SIGTERM draining.
 - Envelope semantics are inviolable: `failure` is a clean negative business answer
   (callers automate on it); `error` is a system problem (callers alert on it).
 - Keep the envelope contract stable; additive changes only.
-- Preserve the agent core; the only sanctioned changes are the four the review
-  names: expose `browserbaseSessionID` from the adapter, wall-clock timeout, re-plan
-  once on observe failure, method allowlist replacing the confirm gate for read-only.
+- Preserve the agent core; the only sanctioned changes are the five the review
+  and the deterministic-replay design name: expose `browserbaseSessionID` from the
+  adapter, wall-clock timeout, re-plan once on observe failure, method allowlist
+  replacing the confirm gate for read-only, and `readText` plus `src/replay.ts`
+  for deterministic replay (unit economics at thousands of runs per day).
 - Prefer the smaller build; the YAGNI list in the review is binding (no Redis, no
   webhooks in v2, no write actions).
 - Writing style everywhere (docs, comments, UI copy): no em dashes, no emojis, concise.

@@ -1,7 +1,7 @@
 # Deterministic replay with learned traces
 
 Date: 2026-07-14
-Status: approved in discussion, pending spec review
+Status: implemented 2026-07-15
 Owner: gateway v2
 
 ## Problem and goal

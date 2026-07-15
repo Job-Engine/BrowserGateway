@@ -34,7 +34,9 @@ The Browser Automation Gateway is JobEngine's internal service that gives applic
         "ranAt": "iso",
         "durationMs": "number",
         "attempts": "number",
-        "stepsUsed": "number"
+        "stepsUsed": "number",
+        "mode": "replay | learned | healed (additive; present once an action has a replay plan)",
+        "traceVersion": "number (additive; the replay trace version used or recorded)"
       }
     },
     "statusSemantics": {
@@ -58,7 +60,9 @@ The Browser Automation Gateway is JobEngine's internal service that gives applic
       "POST /admin/catalogue/:useCase/clients/:client/enable",
       "POST /admin/catalogue/:useCase/clients/:client/disable",
       "POST /admin/canaries/run",
-      "GET /admin/audit"
+      "GET /admin/audit",
+      "GET /admin/traces",
+      "POST /admin/traces/:useCase/:client/invalidate"
     ],
     "style": "async + poll; POST /jobs returns 202 {jobId, state}; poll GET /jobs/:id until state DONE; job states QUEUED -> RUNNING -> DONE"
   },
@@ -81,7 +85,7 @@ The Browser Automation Gateway is JobEngine's internal service that gives applic
     "action definitions are versioned; edits create a new draft version that re-walks the validation and test gates"
   ],
   "dataOwnership": {
-    "ours (Postgres)": "platforms, actions and versions, goal templates, schemas, overrides, client rosters, jobs, tokens, canaries, audit, cost",
+    "ours (Postgres)": "platforms, actions and versions, goal templates, schemas, overrides, client rosters, jobs, tokens, canaries, audit, cost, replay traces (action_traces: versioned per useCase and client, at most one active, secret-scrubbed at save)",
     "browserbase": "sessions, replays, Contexts, projects, usage; referenced by ID from our catalogue and reconciled via their API, never the source of truth for definitions"
   },
   "actionLifecycle": ["draft", "validated", "tested", "live-per-client", "versioned"]
@@ -90,7 +94,9 @@ The Browser Automation Gateway is JobEngine's internal service that gives applic
 
 ## Current state vs target state
 
-**Current (v2 build in progress):** `src/` is the agent core (BrowserAgent port, ReAct loop, redaction, Stagehand adapter) with the four sanctioned v2 changes applied: `sessionId` exposed from the adapter, `timeoutMs` wall-clock budget on `runAgent`, one free re-plan on observe failure, and `allowedMethods` enforcing read-only in code. `src/gateway/` is the v2 shell: Fastify API (body limits, per-caller hashed scoped tokens, fail closed, ownership-checked job reads), Postgres job store and FOR UPDATE SKIP LOCKED queue (global, per-platform caps, per-credential serialization, deadlines, sweep), pino with PII redaction, single-flight JIT secrets keyed by `platform.client` credential item, catalogue with per-client navigation-only overrides. Run locally: `docker compose up -d`, set `DATABASE_URL` and `GATEWAY_DEV_TOKEN`, `npm run gateway`.
+**Current (v2 build in progress):** `src/` is the agent core (BrowserAgent port, ReAct loop, redaction, Stagehand adapter) with four sanctioned v2 changes applied: `sessionId` exposed from the adapter, `timeoutMs` wall-clock budget on `runAgent`, one free re-plan on observe failure, and `allowedMethods` enforcing read-only in code. A fifth sanctioned change reopens the same core freeze for deterministic replay: `readText(selector)` on the `BrowserAgent` port (`src/browser.ts`, `src/types.ts`), fail-fast and never throwing, plus the new `src/replay.ts` module (trace types, input parameterization, identity matching, the replay executor, and `runDeterministic`, the session owner that tries replay first and falls back to learn). Rationale: at thousands of runs per day, replaying a learned trace with zero LLM calls is a unit-economics necessity, not a nice-to-have. `src/gateway/` is the v2 shell: Fastify API (body limits, per-caller hashed scoped tokens, fail closed, ownership-checked job reads), Postgres job store and FOR UPDATE SKIP LOCKED queue (global, per-platform caps, per-credential serialization, deadlines, sweep), pino with PII redaction, single-flight JIT secrets keyed by `platform.client` credential item, catalogue with per-client navigation-only overrides, and a versioned trace store (`src/gateway/traces.ts`, `action_traces` table) behind `GET /admin/traces` and `POST /admin/traces/:useCase/:client/invalidate`. Run locally: `docker compose up -d`, set `DATABASE_URL` and `GATEWAY_DEV_TOKEN`, `npm run gateway`.
+
+Every job resolves to one of three run paths, chosen in `runJob` (`src/gateway/runner.ts`): **replay**, when an active trace exists for the useCase-and-client pair, executing the stored steps with zero LLM calls and verifying reads by fuzzy identity match (`meta.mode: "replay"`); **learn**, when no active trace exists, driving the LLM ReAct loop and, on success, recording a new trace grounded with `observe` (`meta.mode: "learned"`); and **heal**, when a replay attempt fails and the same job falls through to learn without a separate round trip, re-recording the trace and flagging the event as `trace.healed` (rather than `trace.recorded`) in the audit log (`meta.mode: "healed"`).
 
 Epic status: all five epics done (STAB, MVP, WL, OPS, CON). Live-validated on 2026-07-14: `lightreach.ntpDate:spartan` is LIVE, having walked validate -> record-test -> enable against real runs (one record with an NTP date, one without; both success with matchVerified true). The validated portal flow is documented in `docs/lightreach-ntp-agent.md`. Remaining: onboard a second client with its own credential to complete the two-client definition-of-done item.
 
@@ -98,34 +104,36 @@ Fixed and locked in (do not regress): TOTP never cached (username/password keep 
 
 ## File map
 
-| Path                                  | Role                                                                                                                       |
-| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `src/types.ts`                        | BrowserAgent port + core types; the seam that makes the loop testable                                                      |
-| `src/browser.ts`                      | Stagehand v3 adapter (Browserbase or local)                                                                                |
-| `src/loop.ts`                         | The agent loop: plan, observe, classify, act, extract; redaction lives here                                                |
-| `src/planner.ts`                      | LLM planning step (via extract); sees variable names, never values                                                         |
-| `src/risk.ts`                         | Risk keyword classifier (CLI confirm flow only; gateway runs use the code-enforced method allowlist)                       |
-| `src/index.ts`                        | `runAgent()` entry; never throws for operational failures                                                                  |
-| `src/gateway/catalogue.ts`            | useCase registry: portal, url, schemas, buildGoal, client rosters + navigation overrides, resolveAction                    |
-| `src/gateway/secrets.ts`              | JIT 1Password resolution per platform.client; 60s username/password cache, OTP never cached, single-flight, minimal op env |
-| `src/gateway/runner.ts`               | one job end to end: validate, creds, runAgent (read-only allowlist, timeout), envelope                                     |
-| `src/gateway/registry.ts`             | DB-backed lifecycle: validation lint gate, first-live-run rule, enablement, canary state, audit                            |
-| `src/gateway/db.ts`                   | pg pool + migration runner (migrations/*.sql, applied on boot)                                                             |
-| `src/gateway/jobs/store.ts`           | durable job store: enqueue with idempotency, skip-locked claim under caps, complete/requeue, sweep                         |
-| `src/gateway/queue/worker.ts`         | claim loop, one retry for transient errors, cost accounting, graceful drain                                                |
-| `src/gateway/auth/tokens.ts`          | per-caller hashed tokens, useCase:client scopes, fail closed                                                               |
-| `src/gateway/api/app.ts`              | Fastify public surface: health, openapi, catalogue, jobs                                                                   |
-| `src/gateway/api/admin.ts`            | /admin surface: jobs ops, tokens, catalogue lifecycle, canaries, audit                                                     |
-| `src/gateway/api/openapi.ts`          | GET /openapi.json document + the closed error-code enum                                                                    |
-| `src/gateway/canary/scheduler.ts`     | scheduled known-record runs per live pair; Slack/log alerts                                                                |
-| `src/gateway/observability/logger.ts` | pino with PII and credential redaction                                                                                     |
-| `src/gateway/server.ts`               | composition root: pool, migrate, seed, queue, canary, Fastify, SIGTERM drain                                               |
-| `migrations/`                         | ordered SQL migrations (schema source of truth)                                                                            |
-| `packages/gateway-client/`            | @job-engine/gateway-client typed caller SDK                                                                                |
-| `admin-web/`                          | React 19 + Vite admin console (visual contract: BrowserGateway/admin-console-v2.html)                                      |
-| `docs/browser-automation-gateway.md`  | gateway v2 operator/integrator reference                                                                                   |
-| `docs/SESSION-HANDOFF.md`             | session context and decision history                                                                                       |
-| `BrowserGateway/`                     | planning artifacts: reviews, mockups, instructions, feature guide                                                          |
+| Path                                  | Role                                                                                                                                                                                                                                                 |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/types.ts`                        | BrowserAgent port + core types; the seam that makes the loop testable                                                                                                                                                                                |
+| `src/browser.ts`                      | Stagehand v3 adapter (Browserbase or local); adds `readText(selector)`, fail-fast, never throws (sanctioned change 5)                                                                                                                                |
+| `src/loop.ts`                         | The agent loop: plan, observe, classify, act, extract; redaction lives here                                                                                                                                                                          |
+| `src/planner.ts`                      | LLM planning step (via extract); sees variable names, never values                                                                                                                                                                                   |
+| `src/risk.ts`                         | Risk keyword classifier (CLI confirm flow only; gateway runs use the code-enforced method allowlist)                                                                                                                                                 |
+| `src/index.ts`                        | `runAgent()` entry; never throws for operational failures                                                                                                                                                                                            |
+| `src/replay.ts`                       | deterministic replay (sanctioned change 5): trace types, `parameterizeSteps`, `resolveStep`, `normalizeIdentity` + `fuzzyMatch`, `replayTrace` (executor), `runDeterministic` (session owner: replay first, learn fallback, read-selector grounding) |
+| `src/gateway/catalogue.ts`            | useCase registry: portal, url, schemas, buildGoal, client rosters + navigation overrides, per-action `replay` plan (base entry only, not client-overridable), resolveAction                                                                          |
+| `src/gateway/secrets.ts`              | JIT 1Password resolution per platform.client; 60s username/password cache, OTP never cached, single-flight, minimal op env                                                                                                                           |
+| `src/gateway/runner.ts`               | one job end to end: validate, creds, `runDeterministic` (replay / learn / heal, read-only allowlist, timeout), trace bookkeeping, envelope (`meta.mode`, `meta.traceVersion`)                                                                        |
+| `src/gateway/traces.ts`               | versioned `action_traces` store: at most one active trace per useCase+client, retired history kept, `heal_count`, secret scrub enforced at save                                                                                                      |
+| `src/gateway/registry.ts`             | DB-backed lifecycle: validation lint gate, first-live-run rule, enablement, canary state, audit                                                                                                                                                      |
+| `src/gateway/db.ts`                   | pg pool + migration runner (migrations/*.sql, applied on boot)                                                                                                                                                                                       |
+| `src/gateway/jobs/store.ts`           | durable job store: enqueue with idempotency, skip-locked claim under caps, complete/requeue, sweep                                                                                                                                                   |
+| `src/gateway/queue/worker.ts`         | claim loop, one retry for transient errors, cost accounting, graceful drain                                                                                                                                                                          |
+| `src/gateway/auth/tokens.ts`          | per-caller hashed tokens, useCase:client scopes, fail closed                                                                                                                                                                                         |
+| `src/gateway/api/app.ts`              | Fastify public surface: health, openapi, catalogue, jobs                                                                                                                                                                                             |
+| `src/gateway/api/admin.ts`            | /admin surface: jobs ops, tokens, catalogue lifecycle, canaries, audit, traces (`GET /admin/traces` summaries, `POST /admin/traces/:useCase/:client/invalidate`)                                                                                     |
+| `src/gateway/api/openapi.ts`          | GET /openapi.json document + the closed error-code enum                                                                                                                                                                                              |
+| `src/gateway/canary/scheduler.ts`     | scheduled known-record runs per live pair; Slack/log alerts                                                                                                                                                                                          |
+| `src/gateway/observability/logger.ts` | pino with PII and credential redaction                                                                                                                                                                                                               |
+| `src/gateway/server.ts`               | composition root: pool, migrate, seed, queue, canary, Fastify, SIGTERM drain                                                                                                                                                                         |
+| `migrations/`                         | ordered SQL migrations (schema source of truth)                                                                                                                                                                                                      |
+| `packages/gateway-client/`            | @job-engine/gateway-client typed caller SDK                                                                                                                                                                                                          |
+| `admin-web/`                          | React 19 + Vite admin console (visual contract: BrowserGateway/admin-console-v2.html)                                                                                                                                                                |
+| `docs/browser-automation-gateway.md`  | gateway v2 operator/integrator reference                                                                                                                                                                                                             |
+| `docs/SESSION-HANDOFF.md`             | session context and decision history                                                                                                                                                                                                                 |
+| `BrowserGateway/`                     | planning artifacts: reviews, mockups, instructions, feature guide                                                                                                                                                                                    |
 
 ## Glossary
 
