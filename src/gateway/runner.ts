@@ -1,11 +1,17 @@
-import { runAgent } from "../index.js";
+import { runDeterministic } from "../replay.js";
 import { READ_ONLY_METHODS } from "../types.js";
 import type { ResolvedAction } from "./catalogue.js";
 import { resolvePortalCredentials } from "./secrets.js";
-import type { JobEnvelope, JobError, JobStatus } from "./types.js";
+import type { JobEnvelope, JobError, JobMeta, JobStatus } from "./types.js";
+import type { TraceStore } from "./traces.js";
 
 /** Default per-run wall-clock budget; a client override (timeoutMs) wins. */
 const RUN_TIMEOUT_MS = 300_000;
+
+export interface RunnerDeps {
+  traces?: TraceStore;
+  audit?: (action: string, entity: string, detail?: unknown) => Promise<void>;
+}
 
 function sessionIdFromUrl(url?: string): string | undefined {
   if (!url) return undefined;
@@ -30,6 +36,7 @@ export async function runJob(
   jobId: string,
   action: ResolvedAction,
   rawInput: unknown,
+  deps: RunnerDeps = {},
 ): Promise<JobEnvelope> {
   const startedAt = Date.now();
   const ranAt = new Date(startedAt).toISOString();
@@ -41,6 +48,8 @@ export async function runJob(
     sessionUrl?: string;
     sessionId?: string;
     stepsUsed?: number;
+    mode?: JobMeta["mode"];
+    traceVersion?: number;
   }): JobEnvelope => ({
     jobId,
     useCase: action.useCase,
@@ -55,6 +64,8 @@ export async function runJob(
       durationMs: Date.now() - startedAt,
       attempts: 1,
       stepsUsed: extra?.stepsUsed,
+      mode: extra?.mode,
+      traceVersion: extra?.traceVersion,
     },
   });
 
@@ -88,30 +99,77 @@ export async function runJob(
     }
   }
 
-  // 3. Drive the browser (self-hosted Stagehand via the agent core loop).
-  //    Read-only is enforced in code: only allowlisted act methods may run (S3).
-  //    M1: the OTP step follows the resolved credential, not any input field.
-  const result = await runAgent({
+  // 3. Deterministic replay when an active trace exists; LLM learn otherwise.
+  //    Read-only stays code-enforced on both paths (S3).
+  const timeoutMs = action.timeoutMs ?? RUN_TIMEOUT_MS;
+  const activeTrace =
+    deps.traces && action.replay
+      ? await deps.traces.getActive(action.useCase, action.client)
+      : null;
+
+  const result = await runDeterministic({
     url: action.url,
     goal: action.buildGoal(input, { hasOtp: Boolean(credentials.otp) }),
-    data: input,
+    input,
     credentials,
     extractSchema: action.extractSchema,
     allowedMethods: READ_ONLY_METHODS,
-    timeoutMs: action.timeoutMs ?? RUN_TIMEOUT_MS,
+    timeoutMs,
+    replayPlan: action.replay,
+    trace: activeTrace
+      ? { steps: activeTrace.steps, readSelectors: activeTrace.readSelectors }
+      : undefined,
   });
+
+  const mode: NonNullable<JobMeta["mode"]> =
+    result.mode === "replay" ? "replay" : result.replayFailureReason ? "healed" : "learned";
+  let traceVersion = result.mode === "replay" ? activeTrace?.version : undefined;
+
+  // 4. Trace bookkeeping (best effort; never fails the job).
+  if (deps.traces) {
+    try {
+      if (result.mode === "replay" && result.success && activeTrace) {
+        await deps.traces.recordSuccess(activeTrace.id);
+      } else if (result.success && result.traceDraft) {
+        const saved = await deps.traces.saveTrace({
+          useCase: action.useCase,
+          client: action.client,
+          steps: result.traceDraft.steps,
+          readSelectors: result.traceDraft.readSelectors,
+          recordedFromJobId: jobId,
+          activate: result.traceDraft.complete,
+          healed: mode === "healed",
+          secretValues: Object.values(credentials).filter((v) => v.length > 0),
+        });
+        traceVersion = saved.version;
+        await deps.audit?.(
+          mode === "healed" ? "trace.healed" : "trace.recorded",
+          `${action.useCase}/${action.client}`,
+          {
+            version: saved.version,
+            activated: result.traceDraft.complete,
+            reason: result.replayFailureReason,
+          },
+        );
+      }
+    } catch {
+      // Trace persistence is an optimization; the envelope is already decided.
+    }
+  }
 
   const sessionUrl = result.sessionReplayUrl;
   const sessionId = result.sessionId;
-  const extracted = result.extractedData;
+  const extracted = result.data;
 
-  // 4. Normalize outcome.
+  // 5. Normalize outcome.
   if (result.status === "error") {
     return base({
       status: "error",
       sessionUrl,
       sessionId,
       stepsUsed: result.stepsUsed,
+      mode,
+      traceVersion,
       error: { code: "RUN_ERROR", message: result.error?.message ?? result.summary },
     });
   }
@@ -121,6 +179,8 @@ export async function runJob(
       sessionUrl,
       sessionId,
       stepsUsed: result.stepsUsed,
+      mode,
+      traceVersion,
       error: { code: "TIMEOUT", message: "The run exceeded its wall-clock timeout." },
     });
   }
@@ -130,6 +190,8 @@ export async function runJob(
       sessionUrl,
       sessionId,
       stepsUsed: result.stepsUsed,
+      mode,
+      traceVersion,
       error: {
         code: "ACTION_BLOCKED",
         message: "An action outside the read-only method allowlist was blocked.",
@@ -146,6 +208,8 @@ export async function runJob(
       sessionUrl,
       sessionId,
       stepsUsed: result.stepsUsed,
+      mode,
+      traceVersion,
       data: extracted,
       error: {
         code: "MATCH_FAILED",
@@ -160,6 +224,8 @@ export async function runJob(
       sessionUrl,
       sessionId,
       stepsUsed: result.stepsUsed,
+      mode,
+      traceVersion,
       data: extracted,
       error: {
         code: "NTP_FIELD_NOT_FOUND",
@@ -174,6 +240,8 @@ export async function runJob(
     sessionUrl,
     sessionId,
     stepsUsed: result.stepsUsed,
+    mode,
+    traceVersion,
     data: extracted,
     error: result.success ? undefined : { code: "GOAL_NOT_COMPLETED", message: result.summary },
   });

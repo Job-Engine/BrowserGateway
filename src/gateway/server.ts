@@ -13,6 +13,7 @@ import { createRegistry } from "./registry.js";
 import { createCanaryScheduler } from "./canary/scheduler.js";
 import { resolveAction } from "./catalogue.js";
 import { runJob } from "./runner.js";
+import { createTraceStore } from "./traces.js";
 
 function intEnv(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -30,6 +31,7 @@ export async function main(): Promise<void> {
   const auth = createAuthStore(pool);
   const registry = createRegistry(pool);
   await registry.seed();
+  const traces = createTraceStore(pool);
 
   // Local-dev convenience only: GATEWAY_DEV_TOKEN seeds one admin caller so a
   // fresh checkout can talk to itself. Without it the API is fail-closed.
@@ -55,7 +57,11 @@ export async function main(): Promise<void> {
   const queue = createQueueWorker({
     store,
     logger,
-    execute: (job) => runJob(job.id, resolveAction(job.useCase, job.client), job.input),
+    execute: (job) =>
+      runJob(job.id, resolveAction(job.useCase, job.client), job.input, {
+        traces,
+        audit: (a, e, d) => registry.audit("system", a, e, d),
+      }),
     config: {
       globalCap: intEnv("GATEWAY_GLOBAL_CAP", 3),
       defaultPlatformCap: intEnv("GATEWAY_PLATFORM_CAP", 2),

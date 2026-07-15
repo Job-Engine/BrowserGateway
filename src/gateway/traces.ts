@@ -2,15 +2,9 @@
 // per pair; old versions are retired, never deleted. Secrets must never be
 // stored: saveTrace rejects any payload containing a credential literal.
 import type pg from "pg";
+import type { TraceStep } from "../replay.js";
 
-/** Mirror of src/replay.ts TraceStep; kept structural to avoid a core import here. */
-export interface StoredStep {
-  selector: string;
-  method: string;
-  arguments: string[];
-  description: string;
-  paramTemplate: { selector: string; arguments: string[] } | null;
-}
+export type StoredStep = TraceStep;
 
 export interface TraceRow {
   id: string;
