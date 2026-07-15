@@ -340,4 +340,26 @@ describe("replayTrace", () => {
     if (out.ok) expect(out.data.ntpDate).toBe("Jul 11, 2026");
     expect(calls).toBeGreaterThanOrEqual(2);
   });
+
+  it("redacts credential values from escalation reasons", async () => {
+    const { agent } = fakeReplayAgent({
+      actResults: [{ success: false, message: "fill failed for value hunter2 on selector" }],
+      texts: OK_TEXTS,
+    });
+    const out = await replayTrace({
+      agent,
+      url: "https://example.test",
+      trace: TRACE,
+      plan: PLAN,
+      input: INPUT,
+      credentials: { username: "u", password: "hunter2" },
+      allowedMethods: READ_ONLY_METHODS,
+      deadline: Date.now() + 60_000,
+    });
+    expect(out.ok).toBe(false);
+    if (!out.ok) {
+      expect(out.reason).not.toContain("hunter2");
+      expect(out.reason).toContain("***");
+    }
+  });
 });

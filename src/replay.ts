@@ -224,6 +224,15 @@ async function readWithSettle(
   return null;
 }
 
+/** Replace literal credential values with *** in outbound failure text. */
+function redactSecrets(text: string, secrets: string[]): string {
+  let out = text;
+  for (const s of secrets) {
+    if (s) out = out.split(s).join("***");
+  }
+  return out;
+}
+
 /**
  * Execute a stored trace with zero LLM calls. Returns ok only when every step
  * executed, every verify field fuzzy-matched the input, and the data reads
@@ -232,13 +241,16 @@ async function readWithSettle(
  */
 export async function replayTrace(options: ReplayRunOptions): Promise<ReplayOutcome> {
   const variables = { ...options.input, ...options.credentials };
+  const secretValues = Object.values(options.credentials).filter((v) => v.length > 0);
   let stepsUsed = 0;
   const fail = (reason: string): ReplayOutcome => ({ ok: false, reason, stepsUsed });
 
   try {
     await options.agent.goto(options.url);
   } catch (e) {
-    return fail(`navigation failed: ${e instanceof Error ? e.message : String(e)}`);
+    return fail(
+      `navigation failed: ${redactSecrets(e instanceof Error ? e.message : String(e), secretValues)}`,
+    );
   }
 
   for (const step of options.trace.steps) {
@@ -254,7 +266,8 @@ export async function replayTrace(options: ReplayRunOptions): Promise<ReplayOutc
       outcome = { success: false, message: e instanceof Error ? e.message : String(e) };
     }
     stepsUsed++;
-    if (!outcome.success) return fail(`step ${stepsUsed} failed: ${outcome.message}`);
+    if (!outcome.success)
+      return fail(`step ${stepsUsed} failed: ${redactSecrets(outcome.message, secretValues)}`);
   }
 
   if (Date.now() > options.deadline) return fail("deadline exceeded");
