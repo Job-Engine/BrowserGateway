@@ -95,8 +95,14 @@ Compounding measures so our footprint is minimal:
 - **Off-peak bias** — schedule heavy refresh sweeps when Ops isn't in the portal
   (also avoids any session contention).
 
-**[open]** Palmetto's actual limits / ToS position on automated access — we don't
-know them. Until we do, err far on the side of caution.
+**[decided 2026-08-27]:**
+- **Cadence stays 2h pre-NTP / daily post-NTP** — the pool is small (post-08-26 only)
+  and the 24h warm session makes even 2h cheap (~1 login/day + batch reads).
+- **Hard budget per client: max 1 login + 200 reads per hour**, with backoff+jitter
+  and instant stop on any 429/anti-bot signal. This is a safety net against a runaway
+  loop, well under anything abusive.
+- **No known Palmetto limits/ToS** (Andy: none known) → run in the most cautious mode
+  until we observe their behavior.
 
 ## 5. Partial-batch failure semantics [decided]
 
@@ -105,19 +111,22 @@ needs **per-record status**. Sketch: the batch returns `{results: [{accountId,
 status, data|error}]}`, each record independently success/failure/error. The job as
 a whole succeeds if it ran; per-record outcomes drive the consumer's snapshot writes.
 
-## 6. Idempotency & dedup [open — questions for Andy]
+## 6. Idempotency & dedup [decided 2026-08-27]
 
-The gateway has idempotency keys; we must define what "the same request" means.
-Open questions (answers shape the key design):
-1. **Creation re-read:** on a create-poll retry/restart for the same job — re-read
-   the portal (fresh) or return the cached first result?
-2. **Refresh dedup window:** what stops two sweeps double-reading a record in one
-   cycle — the sweep interval, or a fixed time bucket (what size)?
-3. **Forced fresh read:** do we want an Ops "refresh now" that bypasses idempotency?
-4. **Dedup meaning for the consumer:** when the gateway returns a deduped job, does
-   the consumer treat it as "no new data" (no snapshot row, no Asana write)?
-5. **Cross-path timing:** if creation just read a record, and a refresh sweep fires
-   an hour later — re-read or skip? Relationship between create-read and refresh-read.
+1. **Creation re-read:** on a create-poll retry/restart, **return the cached result
+   within a short window (~10 min)** — a restart doesn't earn a fresh login. Real
+   freshness comes from the refresh sweep.
+2. **Refresh dedup window:** idempotency key = `account_id + tier + time-bucket`,
+   the **bucket equal to the tier interval** (2h pre-NTP, 24h post-NTP). Two runs in
+   one bucket dedup; the next bucket re-reads.
+3. **Forced "refresh now":** **NOT in v1** (explicit — likely never; keep the seam
+   in mind but build nothing).
+4. **Dedup = consumer no-op:** a deduped (existing-job) response means **no new
+   snapshot row, no Asana write**.
+5. **Cross-path (creation → refresh):** the refresh **skips a record when a snapshot
+   younger than the freshness threshold exists** (≈ the tier interval). So a
+   create-time read "covers" the first refresh — saving a login and being maximally
+   polite to Palmetto.
 
 ## 7. Drift detection [decided]
 
@@ -177,8 +186,13 @@ batch-capable from day one* so we don't rebuild it. Design for scale; ship simpl
   `creditExpiryDate`). The production read path (browser login → capture jar →
   pure-HTTP reads) is validated end-to-end.
 
-## Open items summary (need Andy)
-- §4 Palmetto rate limits / ToS — determine; err cautious.
-- §6 idempotency — five questions above.
-- §11 volume projection for cost.
-- (§1 login approach and §3 session TTL now resolved — see recon pass 4.)
+## Decisions logged 2026-08-27 (all open product questions now closed)
+- §4 politeness: 2h cadence kept; budget 1 login + 200 reads/hr/client; no known limits → cautious.
+- §6 idempotency: A1–A5 decided (10-min create cache; account+tier+interval-bucket key;
+  no forced-refresh in v1; dedup = consumer no-op; refresh skips a fresh-enough snapshot).
+- Tokens: dedicated `bgw_` caller token scoped `lightreach.*:spartan` (least privilege);
+  Browserbase + Anthropic key rotation on the security list, non-blocking (Andy: "not
+  important now").
+- Volume (D1): **tens of records** → cost is negligible (~1 login/day/client + a few
+  hundred sub-second reads; Browserbase minutes trivial).
+- (§1 login approach and §3 session TTL resolved in recon pass 4.)
