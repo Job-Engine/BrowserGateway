@@ -35,11 +35,11 @@ This introduces a **second action class** in the gateway alongside the LLM/repla
 class: a "code action" whose handler is a hand-written function. Any future portal
 that has an API behind its UI gets this fast, deterministic path.
 
-**[open] Can login itself go pure-HTTP (drop Browserbase too)?** Auth0 sometimes
-allows a Resource-Owner-Password-Grant or a scripted token exchange with no
-browser. If it works for Palmetto, Browserbase falls away for LightReach entirely.
-Worth exactly one test. Until then: **Browserbase stays for login** (Andy's call),
-because a real browser login is the robust default.
+**[resolved 2026-08-27] Login CANNOT go pure-HTTP — Browserbase stays for login.**
+Tested Auth0 Resource-Owner-Password-Grant against `auth.palmetto.com/oauth/token`
+(client_id `fueEjEfdk2CMpMNLm2XIa8LODTUGojL1`, audience `universal`): returns
+`access_denied: Unauthorized` — the tenant has ROPG disabled. So the browser login
+is required; a real browser (Browserbase) it is. This matches Andy's call.
 
 ## 2. Batch action — one login, N reads [decided]
 
@@ -60,15 +60,26 @@ model makes it natural.
 
 ## 3. Session / context reuse [decided — design it in]
 
-Even with batching, each *run* re-logs-in. Browserbase **Contexts** persist cookies
-across sessions; the review lists a "Contexts fast path" as backlog. Target: keep a
-**warm authenticated session per client**, so most runs skip login entirely and go
-straight to reads. Re-auth only on cookie expiry (self-heal).
+Even with batching, each *run* re-logs-in. **[resolved 2026-08-27] The
+`palmetto.finance` `access_token` cookie lasts 24 hours** — that is the warm-session
+TTL. So the lightest design is:
 
-**[open]** Cookie/session lifetime on Palmetto — recon did not measure it. Needed to
-size the warm-session TTL. Also: does one warm session safely serve both the
-creation batch and the refresh batch (they'd share the client)? Per-credential
-serialization already prevents them running at once, so likely yes.
+1. **Login once per ~24h per client** via Browserbase (browser), then **capture the
+   cookie jar** (access_token is httpOnly but readable server-side from the context).
+2. **Store the jar** (encrypted, server-side) and make **pure-HTTP reads with it for
+   ~24h** — no browser needed for reads at all.
+3. **Re-login (browser) only on 401 or cookie expiry** (self-heal).
+
+Footprint on Palmetto: **~1 browser login per client per day**, everything else
+sub-second HTTP. This is about as polite as it gets. Note the `refresh_token` cookie
+is **session-scoped** (dies on browser close), so we cannot silently refresh offline
+— when the 24h access_token lapses we do a fresh browser login, not a token refresh.
+Browserbase Contexts remain an option to persist the browser session itself, but
+storing the cookie jar is simpler and sufficient.
+
+**[open]** Does one warm session safely serve both the creation batch and the refresh
+batch (they share the client)? Per-credential serialization already prevents them
+running at once, so almost certainly yes — confirm at build time.
 
 ## 4. Politeness to Palmetto — first-class, not an afterthought [decided]
 
@@ -157,9 +168,17 @@ near-term volume is tens of records: the sequential-login pain is deferred, and 
 can ship a simple per-record shape first *as long as the action interface is
 batch-capable from day one* so we don't rebuild it. Design for scale; ship simple.
 
+## Recon pass 4 findings (2026-08-27) — login/session settled
+
+- **Pure-HTTP login: NO** (Auth0 ROPG `access_denied`). Browserbase kept for login.
+- **`access_token` cookie TTL = 24h** → warm-session reuse = ~1 login/client/day.
+  `refresh_token` is session-scoped (no offline refresh; re-login on lapse).
+- **All 3 endpoints confirmed via cookie-auth HTTP** (NTP `completedAt`, stipulations,
+  `creditExpiryDate`). The production read path (browser login → capture jar →
+  pure-HTTP reads) is validated end-to-end.
+
 ## Open items summary (need Andy)
-- §1 pure-HTTP login test (drop Browserbase?) — one test.
-- §3 cookie/session lifetime — measure.
 - §4 Palmetto rate limits / ToS — determine; err cautious.
 - §6 idempotency — five questions above.
 - §11 volume projection for cost.
+- (§1 login approach and §3 session TTL now resolved — see recon pass 4.)
