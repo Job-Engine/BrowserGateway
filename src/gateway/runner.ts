@@ -126,6 +126,39 @@ export async function runJob(
     }
   }
 
+  // 2b. Code-action path. When the action carries a handler, run that
+  //     deterministic code (login + HTTP, no LLM) instead of the replay/learn
+  //     engine, and wrap its output — validated against extractSchema — as the
+  //     envelope. Per-record outcomes (e.g. a batch) live inside data; the job
+  //     is "success" when it ran. No traces, no LLM-specific normalization.
+  if (action.handler) {
+    try {
+      const data = await action.handler({
+        input: input as Record<string, unknown>,
+        credentials,
+        client: action.client,
+      });
+      const validated = action.extractSchema.safeParse(data);
+      if (!validated.success) {
+        return base({
+          status: "error",
+          error: {
+            code: "GATEWAY_ERROR",
+            message: `handler output failed schema: ${validated.error.issues
+              .map((i) => `${i.path.join(".")}: ${i.message}`)
+              .join("; ")}`,
+          },
+        });
+      }
+      return base({ status: "success", data: validated.data });
+    } catch (e) {
+      return base({
+        status: "error",
+        error: { code: "RUN_ERROR", message: e instanceof Error ? e.message : String(e) },
+      });
+    }
+  }
+
   // 3. Deterministic replay when an active trace exists; LLM learn otherwise.
   //    Read-only stays code-enforced on both paths (S3).
   const timeoutMs = action.timeoutMs ?? RUN_TIMEOUT_MS;

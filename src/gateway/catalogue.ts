@@ -1,5 +1,10 @@
 import type { ReplayPlan } from "../replay.js";
 import { z } from "zod";
+import {
+  lightreachSnapshotExtract,
+  lightreachSnapshotHandler,
+  lightreachSnapshotInput,
+} from "../portals/lightreach/action.js";
 
 /**
  * The agent catalogue. Each entry binds a useCase to a portal, the input it
@@ -39,7 +44,27 @@ export interface CatalogueEntry<I extends z.ZodTypeAny = z.ZodTypeAny> {
    * be overridden per client.
    */
   clients?: Record<string, ClientOverride>;
+  /**
+   * Code-action handler. When present, the runner runs THIS deterministic
+   * function (login + HTTP, no LLM) instead of the replay/learn engine, and
+   * wraps its return value (validated against extractSchema) as the envelope.
+   * For portals that expose an API behind their UI (e.g. LightReach/Palmetto):
+   * faster, exact, and drift-resistant. `buildGoal`/`replay` are unused on a
+   * code action (supply a stub goal).
+   */
+  handler?: ActionHandler;
 }
+
+/**
+ * A code-action handler: deterministic code that produces the action's data.
+ * Receives the validated input and the JIT-resolved credentials; returns a
+ * value the runner validates against the action's extractSchema.
+ */
+export type ActionHandler = (args: {
+  input: Record<string, unknown>;
+  credentials: Record<string, string>;
+  client: string;
+}) => Promise<unknown>;
 
 export interface GoalContext {
   /** True when the resolved credential includes a TOTP field. */
@@ -74,6 +99,8 @@ export interface ResolvedAction {
   timeoutMs?: number;
   replay?: ReplayPlan;
   buildGoal: (input: Record<string, unknown>, ctx: GoalContext) => string;
+  /** Code-action handler (see CatalogueEntry.handler). */
+  handler?: ActionHandler;
 }
 
 /**
@@ -104,6 +131,7 @@ export function resolveAction(useCase: string, client: string): ResolvedAction {
     credentialItem,
     timeoutMs: override?.timeoutMs,
     replay: entry.replay,
+    handler: entry.handler,
     buildGoal: (input, ctx) => {
       const parts = [entry.buildGoal(input, ctx)];
       const labels = Object.entries(override?.labelMap ?? {});
@@ -193,6 +221,27 @@ export const CATALOGUE: Record<string, CatalogueEntry> = {
       brandx: {
         labelMap: { "Progress Tracker": "Timeline" },
       },
+    },
+  },
+
+  // Code action (issue #467): batch snapshot by palmetto account id — NTP,
+  // stipulations, credit expiry — via deterministic login + HTTP (no LLM/replay).
+  // Runs the handler in src/portals/lightreach/action.ts.
+  "lightreach.accountSnapshot": {
+    useCase: "lightreach.accountSnapshot",
+    portalKey: "lightreach",
+    url: "https://palmetto.finance/accounts",
+    inputSchema: lightreachSnapshotInput,
+    extractSchema: lightreachSnapshotExtract,
+    requiresLogin: true,
+    // buildGoal is unused on a code action (the handler runs instead); a stub
+    // keeps the shared CatalogueEntry interface satisfied.
+    buildGoal: () => "code-action: LightReach account snapshot (no LLM).",
+    handler: lightreachSnapshotHandler,
+    clients: {
+      spartan: { credentialItem: "Lightreach - Spartan" },
+      lgcyco: {},
+      brandx: {},
     },
   },
 };
