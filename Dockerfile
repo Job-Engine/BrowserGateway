@@ -13,7 +13,10 @@ RUN npm run build
 FROM node:20-slim AS proddeps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+# --ignore-scripts: the `prepare` lifecycle runs `husky` (a devDependency); with
+# --omit=dev husky is absent, so the script exits 127 and fails the build.
+# Runtime deps need no install scripts, so skipping them is safe here.
+RUN npm ci --omit=dev --ignore-scripts
 
 FROM debian:bookworm-slim AS opcli
 ARG OP_VERSION=2.30.3
