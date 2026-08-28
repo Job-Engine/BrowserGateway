@@ -1,0 +1,21 @@
+# Local dev + test Postgres. Production uses Supabase (DATABASE_URL).
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: browsergateway-pg
+    environment:
+      POSTGRES_USER: gateway
+      POSTGRES_PASSWORD: gateway
+      POSTGRES_DB: browsergateway
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gateway -d browsergateway"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
+volumes:
+  pgdata:

@@ -5,3 +5,11 @@ dist/
 *.log
 .DS_Store
 .remember/
+coverage/
+.playwright-mcp/
+console-catalogue-live.png
+
+# Secret backups + local tool state (added 2026-08-27)
+.env.bak*
+*.bak
+.claude/skills/

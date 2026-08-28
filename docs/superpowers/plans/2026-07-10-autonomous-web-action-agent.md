@@ -33,6 +33,7 @@
 ### Task 1: Project scaffolding
 
 **Files:**
+
 - Create: `tsconfig.json`
 - Create: `vitest.config.ts`
 - Create: `.env.example`
@@ -40,15 +41,18 @@
 - Create: `README.md`
 
 **Interfaces:**
+
 - Consumes: existing `package.json` (deps `@browserbasehq/stagehand`, `zod`; scripts `build`/`typecheck`/`test`/`agent`).
 - Produces: a compiling, testable workspace. `npm run typecheck` and `npm test` succeed.
 
 - [ ] **Step 1: Install dev dependencies**
 
 Run:
+
 ```bash
 npm install -D typescript vitest tsx @types/node
 ```
+
 Expected: packages added, no errors.
 
 - [ ] **Step 2: Create `tsconfig.json`**
@@ -111,7 +115,8 @@ WAA_ENV=BROWSERBASE
 `src/.gitkeep` and `test/.gitkeep`: empty files.
 
 `README.md`:
-```markdown
+
+````markdown
 # web-action-agent
 
 Autonomous web action agent. Given a URL and a natural-language goal, it drives a
@@ -134,9 +139,11 @@ const result = await runAgent({
 });
 console.log(result.status, result.summary);
 ```
+````
 
 See `docs/superpowers/specs/` for the design and `.env.example` for configuration.
-```
+
+````
 
 - [ ] **Step 6: Verify typecheck and tests run**
 
@@ -148,16 +155,18 @@ Expected: typecheck passes with no errors; vitest reports "no tests" and exits 0
 ```bash
 git add tsconfig.json vitest.config.ts .env.example src/.gitkeep test/.gitkeep README.md package.json package-lock.json
 git commit -m "chore: scaffold typescript/vitest workspace"
-```
+````
 
 ---
 
 ### Task 2: Shared types and the BrowserAgent port
 
 **Files:**
+
 - Create: `src/types.ts`
 
 **Interfaces:**
+
 - Produces: `RunAgentOptions`, `AgentRunResult`, `ProposedAction`, `ObservedAction`, `ActOutcome`, `RiskAssessment`, `RiskLevel`, `ActionRecord`, `AgentStatus`, `AgentEvent`, `ConfirmFn`, `BrowserAgent`. All later tasks consume these.
 
 - [ ] **Step 1: Write `src/types.ts`**
@@ -198,12 +207,7 @@ export interface ActionRecord {
   message?: string;
 }
 
-export type AgentStatus =
-  | "completed"
-  | "blocked"
-  | "aborted"
-  | "max_steps"
-  | "error";
+export type AgentStatus = "completed" | "blocked" | "aborted" | "max_steps" | "error";
 
 export type AgentEvent =
   | { type: "step_start"; step: number }
@@ -214,9 +218,7 @@ export type AgentEvent =
   | { type: "acted"; step: number; outcome: ActionRecord["outcome"]; message?: string }
   | { type: "done"; status: AgentStatus };
 
-export type ConfirmFn = (
-  action: ProposedAction,
-) => boolean | Promise<boolean>;
+export type ConfirmFn = (action: ProposedAction) => boolean | Promise<boolean>;
 
 export interface RunAgentOptions {
   url: string;
@@ -251,14 +253,8 @@ export interface AgentRunResult {
 export interface BrowserAgent {
   readonly sessionReplayUrl?: string;
   goto(url: string): Promise<void>;
-  observe(
-    instruction: string,
-    variables?: Record<string, string>,
-  ): Promise<ObservedAction[]>;
-  act(
-    action: ObservedAction,
-    variables?: Record<string, string>,
-  ): Promise<ActOutcome>;
+  observe(instruction: string, variables?: Record<string, string>): Promise<ObservedAction[]>;
+  act(action: ObservedAction, variables?: Record<string, string>): Promise<ActOutcome>;
   extract<T>(instruction: string, schema: z.ZodType<T>): Promise<T>;
   close(): Promise<void>;
 }
@@ -281,10 +277,12 @@ git commit -m "feat: shared types and BrowserAgent port"
 ### Task 3: Risk classification (pure, TDD)
 
 **Files:**
+
 - Create: `test/risk.test.ts`
 - Create: `src/risk.ts`
 
 **Interfaces:**
+
 - Consumes: `ProposedAction`, `RiskAssessment` from `./types.js`.
 - Produces: `classifyRisk(action: { description?: string; method?: string; instruction?: string }, config?: RiskConfig): RiskAssessment` and `DEFAULT_RISKY_KEYWORDS: readonly string[]`.
 
@@ -313,19 +311,27 @@ describe("classifyRisk", () => {
   });
 
   it("treats benign fills and clicks as safe", () => {
-    expect(classifyRisk({ description: "Type into the First name field", method: "fill" }).level).toBe("safe");
+    expect(
+      classifyRisk({ description: "Type into the First name field", method: "fill" }).level,
+    ).toBe("safe");
     expect(classifyRisk({ description: "Click the Next tab", method: "click" }).level).toBe("safe");
   });
 
   it("matches keywords found only in the instruction", () => {
-    expect(classifyRisk({ description: "Click element", instruction: "submit the application" }).level).toBe("risky");
+    expect(
+      classifyRisk({ description: "Click element", instruction: "submit the application" }).level,
+    ).toBe("risky");
   });
 
   it("honors a custom keyword list that replaces the defaults", () => {
     // "submit" is a default keyword but is NOT in the custom list -> safe
-    expect(classifyRisk({ description: "submit the form" }, { keywords: ["frobnicate"] }).level).toBe("safe");
+    expect(
+      classifyRisk({ description: "submit the form" }, { keywords: ["frobnicate"] }).level,
+    ).toBe("safe");
     // the custom keyword matches -> risky
-    expect(classifyRisk({ description: "frobnicate the widget" }, { keywords: ["frobnicate"] }).level).toBe("risky");
+    expect(
+      classifyRisk({ description: "frobnicate the widget" }, { keywords: ["frobnicate"] }).level,
+    ).toBe("risky");
     expect(DEFAULT_RISKY_KEYWORDS.length).toBeGreaterThan(0);
   });
 });
@@ -342,9 +348,25 @@ Expected: FAIL — cannot find module `../src/risk.js`.
 import type { RiskAssessment } from "./types.js";
 
 export const DEFAULT_RISKY_KEYWORDS = [
-  "submit", "send", "pay", "purchase", "checkout", "buy", "order",
-  "delete", "remove", "post", "publish", "confirm", "apply", "sign",
-  "agree", "accept", "transfer", "book", "reserve",
+  "submit",
+  "send",
+  "pay",
+  "purchase",
+  "checkout",
+  "buy",
+  "order",
+  "delete",
+  "remove",
+  "post",
+  "publish",
+  "confirm",
+  "apply",
+  "sign",
+  "agree",
+  "accept",
+  "transfer",
+  "book",
+  "reserve",
 ] as const;
 
 export interface RiskConfig {
@@ -357,10 +379,7 @@ type ActionLike = {
   instruction?: string;
 };
 
-export function classifyRisk(
-  action: ActionLike,
-  config: RiskConfig = {},
-): RiskAssessment {
+export function classifyRisk(action: ActionLike, config: RiskConfig = {}): RiskAssessment {
   const keywords = config.keywords ?? DEFAULT_RISKY_KEYWORDS;
   const haystack = [action.description, action.method, action.instruction]
     .filter(Boolean)
@@ -390,10 +409,12 @@ git commit -m "feat: risk classification heuristic"
 ### Task 4: Planner (TDD with mocked extract)
 
 **Files:**
+
 - Create: `test/planner.test.ts`
 - Create: `src/planner.ts`
 
 **Interfaces:**
+
 - Consumes: `ActionRecord` from `./types.js`; `zod`.
 - Produces:
   - `planStepSchema` (Zod) and `type PlanStep = { reasoning: string; isDone: boolean; instruction: string }`.
@@ -419,7 +440,11 @@ const record: ActionRecord = {
 
 describe("buildPlanPrompt", () => {
   it("includes the goal, placeholder names, and history", () => {
-    const p = buildPlanPrompt({ goal: "Apply for the job", variableNames: ["email", "password"], history: [record] });
+    const p = buildPlanPrompt({
+      goal: "Apply for the job",
+      variableNames: ["email", "password"],
+      history: [record],
+    });
     expect(p).toContain("Apply for the job");
     expect(p).toContain("%email%");
     expect(p).toContain("%password%");
@@ -434,7 +459,9 @@ describe("buildPlanPrompt", () => {
 
 describe("planNextStep", () => {
   it("calls extract with the plan schema and returns the parsed step", async () => {
-    const extract = vi.fn().mockResolvedValue({ reasoning: "r", isDone: false, instruction: "click Next" });
+    const extract = vi
+      .fn()
+      .mockResolvedValue({ reasoning: "r", isDone: false, instruction: "click Next" });
     const step = await planNextStep(extract, { goal: "g", variableNames: [], history: [] });
     expect(extract).toHaveBeenCalledTimes(1);
     expect(extract.mock.calls[0][1]).toBe(planStepSchema);
@@ -463,10 +490,7 @@ export const planStepSchema = z.object({
 
 export type PlanStep = z.infer<typeof planStepSchema>;
 
-export type ExtractFn = <T>(
-  instruction: string,
-  schema: z.ZodType<T>,
-) => Promise<T>;
+export type ExtractFn = <T>(instruction: string, schema: z.ZodType<T>) => Promise<T>;
 
 export interface PlanContext {
   goal: string;
@@ -479,9 +503,7 @@ export function buildPlanPrompt(ctx: PlanContext): string {
     ? ctx.history
         .map(
           (h, i) =>
-            `${i + 1}. [${h.outcome}] ${h.action.description}${
-              h.message ? ` — ${h.message}` : ""
-            }`,
+            `${i + 1}. [${h.outcome}] ${h.action.description}${h.message ? ` — ${h.message}` : ""}`,
         )
         .join("\n")
     : "(no actions taken yet)";
@@ -501,14 +523,11 @@ export function buildPlanPrompt(ctx: PlanContext): string {
     "Respond with:",
     "- reasoning: a brief justification grounded in what is visible on the page.",
     "- isDone: true ONLY if the goal is fully accomplished; otherwise false.",
-    '- instruction: one concrete imperative UI action for the next step (e.g. \'click the "Next" button\', \'type %email% into the Email field\'). Use an empty string if isDone is true.',
+    "- instruction: one concrete imperative UI action for the next step (e.g. 'click the \"Next\" button', 'type %email% into the Email field'). Use an empty string if isDone is true.",
   ].join("\n");
 }
 
-export async function planNextStep(
-  extract: ExtractFn,
-  ctx: PlanContext,
-): Promise<PlanStep> {
+export async function planNextStep(extract: ExtractFn, ctx: PlanContext): Promise<PlanStep> {
   return extract(buildPlanPrompt(ctx), planStepSchema);
 }
 ```
@@ -530,10 +549,12 @@ git commit -m "feat: LLM planner (plan prompt + next-step)"
 ### Task 5: Control loop (TDD against a fake BrowserAgent)
 
 **Files:**
+
 - Create: `test/loop.test.ts`
 - Create: `src/loop.ts`
 
 **Interfaces:**
+
 - Consumes: `BrowserAgent`, `ActionRecord`, `AgentEvent`, `AgentStatus`, `ProposedAction`, `ObservedAction`, `ConfirmFn`, `RiskAssessment` from `./types.js`; `classifyRisk` from `./risk.js`; `planNextStep`, `ExtractFn` from `./planner.js`; `zod`.
 - Produces:
   - `interface LoopParams` (see code).
@@ -653,7 +674,11 @@ describe("runLoop", () => {
   });
 
   it("stops with max_steps when the goal never completes", async () => {
-    const plans: PlanStep[] = Array.from({ length: 10 }, () => ({ reasoning: "", isDone: false, instruction: "click next" }));
+    const plans: PlanStep[] = Array.from({ length: 10 }, () => ({
+      reasoning: "",
+      isDone: false,
+      instruction: "click next",
+    }));
     const { agent } = makeFakeAgent({ plans });
     const res = await runLoop({ ...base, agent, maxSteps: 3 });
     expect(res.status).toBe("max_steps");
@@ -661,7 +686,9 @@ describe("runLoop", () => {
   });
 
   it("returns aborted when the signal is already aborted", async () => {
-    const { agent } = makeFakeAgent({ plans: [{ reasoning: "", isDone: false, instruction: "x" }] });
+    const { agent } = makeFakeAgent({
+      plans: [{ reasoning: "", isDone: false, instruction: "x" }],
+    });
     const res = await runLoop({ ...base, agent, signal: AbortSignal.abort() });
     expect(res.status).toBe("aborted");
   });
@@ -672,9 +699,21 @@ describe("runLoop", () => {
         { reasoning: "", isDone: false, instruction: "type the password" },
         { reasoning: "", isDone: true, instruction: "" },
       ],
-      observe: () => [{ selector: "x", description: "Fill password with hunter2", method: "fill", arguments: ["hunter2"] }],
+      observe: () => [
+        {
+          selector: "x",
+          description: "Fill password with hunter2",
+          method: "fill",
+          arguments: ["hunter2"],
+        },
+      ],
     });
-    const res = await runLoop({ ...base, agent, variables: { password: "hunter2" }, secretValues: ["hunter2"] });
+    const res = await runLoop({
+      ...base,
+      agent,
+      variables: { password: "hunter2" },
+      secretValues: ["hunter2"],
+    });
     const dump = JSON.stringify(res.actionsLog);
     expect(dump).not.toContain("hunter2");
     expect(dump).toContain("***");
@@ -685,7 +724,11 @@ describe("runLoop", () => {
       plans: [{ reasoning: "", isDone: true, instruction: "" }],
       finalExtract: { confirmation: "ABC123" },
     });
-    const res = await runLoop({ ...base, agent, extractSchema: z.object({ confirmation: z.string() }) });
+    const res = await runLoop({
+      ...base,
+      agent,
+      extractSchema: z.object({ confirmation: z.string() }),
+    });
     expect(res.extractedData).toEqual({ confirmation: "ABC123" });
   });
 });
@@ -783,7 +826,10 @@ export async function runLoop(params: LoopParams): Promise<LoopResult> {
   const actionsLog: ActionRecord[] = [];
   let consecutiveFailures = 0;
 
-  const finalize = async (status: AgentStatus, error?: LoopResult["error"]): Promise<LoopResult> => {
+  const finalize = async (
+    status: AgentStatus,
+    error?: LoopResult["error"],
+  ): Promise<LoopResult> => {
     let extractedData: unknown;
     if (
       params.extractSchema &&
@@ -935,11 +981,13 @@ git commit -m "feat: owned control loop (plan -> observe -> classify -> confirm 
 ### Task 6: Stagehand-backed session adapter + local integration test
 
 **Files:**
+
 - Create: `src/browser.ts`
 - Create: `test/fixtures/form.html`
 - Create: `test/browser.integration.test.ts`
 
 **Interfaces:**
+
 - Consumes: `BrowserAgent`, `ObservedAction`, `ActOutcome` from `./types.js`; `Stagehand` from `@browserbasehq/stagehand`; `zod`.
 - Produces:
   - `interface CreateSessionConfig = { env?: "BROWSERBASE" | "LOCAL"; model: string; apiKey?: string; projectId?: string; context?: { id: string; persist?: boolean }; headless?: boolean; verbose?: 0 | 1 | 2 }`.
@@ -1009,7 +1057,10 @@ export async function createSession(config: CreateSessionConfig): Promise<Browse
     async goto(url: string) {
       await page.goto(url);
     },
-    async observe(instruction: string, variables?: Record<string, string>): Promise<ObservedAction[]> {
+    async observe(
+      instruction: string,
+      variables?: Record<string, string>,
+    ): Promise<ObservedAction[]> {
       const result = await stagehand.observe(instruction, variables ? { variables } : undefined);
       return result.map((a) => ({
         selector: a.selector,
@@ -1038,10 +1089,15 @@ export async function createSession(config: CreateSessionConfig): Promise<Browse
 ```html
 <!doctype html>
 <html>
-  <head><title>Test Application Form</title></head>
+  <head>
+    <title>Test Application Form</title>
+  </head>
   <body>
     <h1>Job Application</h1>
-    <form id="app" onsubmit="event.preventDefault(); document.getElementById('result').textContent = 'Application submitted for ' + document.getElementById('name').value;">
+    <form
+      id="app"
+      onsubmit="event.preventDefault(); document.getElementById('result').textContent = 'Application submitted for ' + document.getElementById('name').value;"
+    >
       <label>Full name <input id="name" name="name" type="text" /></label><br />
       <label>Email <input id="email" name="email" type="email" /></label><br />
       <button id="submit" type="submit">Submit Application</button>
@@ -1101,7 +1157,11 @@ d("browser adapter + loop against a local form (real Stagehand)", () => {
   });
 
   it("fills the form and blocks the submit when the hook rejects it", async () => {
-    agent = await createSession({ env: "LOCAL", model: "anthropic/claude-sonnet-4-6", headless: true });
+    agent = await createSession({
+      env: "LOCAL",
+      model: "anthropic/claude-sonnet-4-6",
+      headless: true,
+    });
     const risky: ProposedAction[] = [];
     const res = await runLoop({
       ...loopBase,
@@ -1117,7 +1177,9 @@ d("browser adapter + loop against a local form (real Stagehand)", () => {
     });
 
     expect(res.status).toBe("blocked");
-    expect(risky.some((a) => /submit/i.test(a.description) || /submit/i.test(a.instruction))).toBe(true);
+    expect(risky.some((a) => /submit/i.test(a.description) || /submit/i.test(a.instruction))).toBe(
+      true,
+    );
     expect(res.actionsLog.some((r) => r.outcome === "executed")).toBe(true); // at least one field was filled
   });
 });
@@ -1147,10 +1209,12 @@ git commit -m "feat: Stagehand-backed session adapter + local integration test"
 ### Task 7: Public entry point `runAgent`
 
 **Files:**
+
 - Create: `test/index.test.ts`
 - Create: `src/index.ts`
 
 **Interfaces:**
+
 - Consumes: everything above; mocks `./browser.js` in tests.
 - Produces:
   - `runAgent(options: RunAgentOptions): Promise<AgentRunResult>`.
@@ -1255,7 +1319,10 @@ function validateOptions(options: RunAgentOptions): void {
   if (typeof options.goal !== "string" || options.goal.length === 0) {
     throw new TypeError("runAgent: 'goal' must be a non-empty string");
   }
-  if (options.maxSteps !== undefined && (!Number.isInteger(options.maxSteps) || options.maxSteps < 1)) {
+  if (
+    options.maxSteps !== undefined &&
+    (!Number.isInteger(options.maxSteps) || options.maxSteps < 1)
+  ) {
     throw new TypeError("runAgent: 'maxSteps' must be a positive integer");
   }
 }
@@ -1373,10 +1440,12 @@ git commit -m "feat: runAgent public entry point"
 ### Task 8: CLI wrapper
 
 **Files:**
+
 - Create: `test/cli.test.ts`
 - Create: `src/cli.ts`
 
 **Interfaces:**
+
 - Consumes: `runAgent`, `autoApprove` from `./index.js`; `ProposedAction`, `AgentEvent` from `./types.js`; `node:readline/promises`.
 - Produces: `parseArgs(argv: string[]): CliArgs` (pure, exported for tests) and a runnable `main()` guarded by an `import.meta` entry check.
   - `interface CliArgs = { url: string; goal: string; data: Record<string,string>; credentials: Record<string,string>; model?: string; auto: boolean; local: boolean }`.
@@ -1390,11 +1459,16 @@ import { parseArgs } from "../src/cli.js";
 describe("parseArgs", () => {
   it("parses url, goal, json data/creds, and flags", () => {
     const args = parseArgs([
-      "--url", "https://x.com/apply",
-      "--goal", "apply for the job",
-      "--data", '{"name":"Ada"}',
-      "--creds", '{"password":"pw"}',
-      "--model", "anthropic/claude-opus-4-8",
+      "--url",
+      "https://x.com/apply",
+      "--goal",
+      "apply for the job",
+      "--data",
+      '{"name":"Ada"}',
+      "--creds",
+      '{"password":"pw"}',
+      "--model",
+      "anthropic/claude-opus-4-8",
       "--auto",
       "--local",
     ]);
@@ -1556,7 +1630,7 @@ git commit -m "feat: dev CLI wrapper with interactive confirmation"
 
 ## Notes / Known Risks (read before implementing)
 
-1. **Planner reuses `extract()` as a reasoner.** `planNextStep` calls `stagehand.extract(prompt, planStepSchema)`; Stagehand feeds the current page content plus our prompt to the LLM and returns `{ reasoning, isDone, instruction }`. This avoids adding a second LLM integration. **Risk:** `extract` is designed to pull data *from* the page, so a stubborn model might return page content instead of a plan. If the local integration test (Task 6) shows poor planning, the fallback is to add a dedicated LLM call (`npm i ai @ai-sdk/anthropic`) inside `planNextStep` while keeping its signature identical — no other module changes. The `ExtractFn` seam already isolates this.
+1. **Planner reuses `extract()` as a reasoner.** `planNextStep` calls `stagehand.extract(prompt, planStepSchema)`; Stagehand feeds the current page content plus our prompt to the LLM and returns `{ reasoning, isDone, instruction }`. This avoids adding a second LLM integration. **Risk:** `extract` is designed to pull data _from_ the page, so a stubborn model might return page content instead of a plan. If the local integration test (Task 6) shows poor planning, the fallback is to add a dedicated LLM call (`npm i ai @ai-sdk/anthropic`) inside `planNextStep` while keeping its signature identical — no other module changes. The `ExtractFn` seam already isolates this.
 
 2. **Summary is deterministic, not LLM-generated.** The spec (§4) mentioned an LLM summary; we build a deterministic recap in `buildSummary` for reliability and zero extra cost. Swapping in an LLM summary later is a one-function change in `index.ts`.
 

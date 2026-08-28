@@ -103,7 +103,13 @@ catalogue entry + one 1Password login item.
   "status": "success | failure | error",
   "data": { "ntpDate": "…", "matchVerified": true },
   "error": { "code": "MATCH_FAILED", "message": "…", "fields": ["address"] },
-  "meta": { "sessionId": "…", "sessionReplayUrl": "…", "ranAt": "…", "durationMs": 0, "attempts": 1 }
+  "meta": {
+    "sessionId": "…",
+    "sessionReplayUrl": "…",
+    "ranAt": "…",
+    "durationMs": 0,
+    "attempts": 1
+  }
 }
 ```
 
@@ -115,6 +121,7 @@ missing field); `error` = system/auth/nav problem.
 ## 6. Files (all created/modified this session)
 
 Gateway (new, the main deliverable):
+
 - `src/gateway/types.ts` — JobEnvelope, JobStatus, JobRecord.
 - `src/gateway/catalogue.ts` — useCase registry; `lightreach.ntpDate` entry;
   `getEntry()`. Each entry: portalKey, url, inputSchema (zod), extractSchema,
@@ -130,11 +137,13 @@ Gateway (new, the main deliverable):
   Chromium (uses Browserbase remote browsers).
 
 Hosted-agent path (alternative/earlier work, still valid):
+
 - `src/lightreachAgent.ts` — REST client for the dashboard "Lightreach NTP Passed"
   agent (`startNtpRun`, `pollRun`, `getRun`, `runLightreachNtpCheck`).
 - `examples/lightreach-server.ts` — minimal backend endpoint wrapping that client.
 
 Config/docs:
+
 - `.env.example` — added PORT, GATEWAY_TOKEN, OP_SERVICE_ACCOUNT_TOKEN,
   OP_PORTALS_VAULT, PORTAL_* fallback.
 - `package.json` — added `"gateway": "tsx src/gateway/server.ts"`.
@@ -207,3 +216,17 @@ Container: `docker build -t bb-gateway . && docker run --rm -p 8080:8080 -e OP_S
 - No em dashes. Be concise. No emojis unless asked.
 - Never expose internal secrets or credentials in logs or responses.
 - Save deliverables to the `Browserbase` workspace folder.
+
+## 2026-07-13: v2 build executed
+
+The two-phase process ran end to end in one session. Baseline of the v1
+prototype committed; main fast-forwarded; work on feat/gateway-v2. STAB, MVP,
+WL, OPS epics shipped with tests (116+, coverage gate 80 percent on
+src/gateway); Phase 1 spec (32 stories) committed locally in
+product-ops-planning on branch browser-automation-gateway-spec, not pushed
+pending review. Decisions of note: simplification 2 from the review (collapse
+the plan+observe double LLM call) deferred because it conflicts with the
+locked four-sanctioned-core-changes rule; cost tracking (stepsUsed) now
+measures whether it is worth reopening. Remaining: first live LightReach run
+(blocked on credentials in .env), admin console (CON), spec push, two-client
+live validation. See CLAUDE.md "Outstanding".

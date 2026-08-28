@@ -12,7 +12,11 @@ const record: ActionRecord = {
 
 describe("buildPlanPrompt", () => {
   it("includes the goal, placeholder names, and history", () => {
-    const p = buildPlanPrompt({ goal: "Apply for the job", variableNames: ["email", "password"], history: [record] });
+    const p = buildPlanPrompt({
+      goal: "Apply for the job",
+      variableNames: ["email", "password"],
+      history: [record],
+    });
     expect(p).toContain("Apply for the job");
     expect(p).toContain("%email%");
     expect(p).toContain("%password%");
@@ -27,7 +31,9 @@ describe("buildPlanPrompt", () => {
 
 describe("planNextStep", () => {
   it("calls extract with the plan schema and returns the parsed step", async () => {
-    const extract = vi.fn().mockResolvedValue({ reasoning: "r", isDone: false, instruction: "click Next" });
+    const extract = vi
+      .fn()
+      .mockResolvedValue({ reasoning: "r", isDone: false, instruction: "click Next" });
     const step = await planNextStep(extract, { goal: "g", variableNames: [], history: [] });
     expect(extract).toHaveBeenCalledTimes(1);
     expect(extract.mock.calls[0][1]).toBe(planStepSchema);

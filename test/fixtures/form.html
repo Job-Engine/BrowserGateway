@@ -1,9 +1,18 @@
 <!doctype html>
 <html>
-  <head><title>Test Application Form</title></head>
+  <head>
+    <title>Test Application Form</title>
+  </head>
   <body>
     <h1>Job Application</h1>
-    <form id="app" onsubmit="event.preventDefault(); document.getElementById('result').textContent = 'Application submitted for ' + document.getElementById('name').value;">
+    <form
+      id="app"
+      onsubmit="
+        event.preventDefault();
+        document.getElementById('result').textContent =
+          'Application submitted for ' + document.getElementById('name').value;
+      "
+    >
       <label>Full name <input id="name" name="name" type="text" /></label><br />
       <label>Email <input id="email" name="email" type="email" /></label><br />
       <button id="submit" type="submit">Submit Application</button>

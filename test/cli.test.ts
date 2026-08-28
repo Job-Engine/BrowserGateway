@@ -4,11 +4,16 @@ import { parseArgs } from "../src/cli.js";
 describe("parseArgs", () => {
   it("parses url, goal, json data/creds, and flags", () => {
     const args = parseArgs([
-      "--url", "https://x.com/apply",
-      "--goal", "apply for the job",
-      "--data", '{"name":"Ada"}',
-      "--creds", '{"password":"pw"}',
-      "--model", "anthropic/claude-opus-4-8",
+      "--url",
+      "https://x.com/apply",
+      "--goal",
+      "apply for the job",
+      "--data",
+      '{"name":"Ada"}',
+      "--creds",
+      '{"password":"pw"}',
+      "--model",
+      "anthropic/claude-opus-4-8",
       "--auto",
       "--local",
     ]);

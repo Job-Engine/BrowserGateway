@@ -21,6 +21,8 @@ export interface LoopParams {
   onBeforeAction?: ConfirmFn;
   classifyRiskFn?: (action: ProposedAction) => RiskAssessment;
   extractSchema?: z.ZodType;
+  /** When set, replaces the risk classifier + confirm gate with a code-enforced allowlist. */
+  allowedMethods?: readonly string[];
   maxSteps: number;
   maxObserveRetries: number;
   maxConsecutiveFailures: number;
@@ -39,7 +41,10 @@ export interface LoopResult {
 function redact(text: string | undefined, secrets: string[]): string | undefined {
   if (!text) return text;
   let out = text;
-  for (const s of secrets) {
+  // Fix F: longest-first so a short secret cannot mangle a longer one it's a
+  // substring of (e.g. "u" redacting inside "hunter2" before "hunter2" itself
+  // is redacted would leak "h***nter2").
+  for (const s of [...secrets].sort((a, b) => b.length - a.length)) {
     if (s) out = out.split(s).join("***");
   }
   return out;
@@ -81,8 +86,14 @@ export async function runLoop(params: LoopParams): Promise<LoopResult> {
   const variableNames = Object.keys(variables);
   const actionsLog: ActionRecord[] = [];
   let consecutiveFailures = 0;
+  // One observe failure per run is forgiven: the planner sees the failed step
+  // in history and gets a chance to re-plan before failures count toward error.
+  let freeReplanUsed = false;
 
-  const finalize = async (status: AgentStatus, error?: LoopResult["error"]): Promise<LoopResult> => {
+  const finalize = async (
+    status: AgentStatus,
+    error?: LoopResult["error"],
+  ): Promise<LoopResult> => {
     let extractedData: unknown;
     if (
       params.extractSchema &&
@@ -93,6 +104,10 @@ export async function runLoop(params: LoopParams): Promise<LoopResult> {
           `From the current page, extract the data relevant to this goal: ${goal}`,
           params.extractSchema,
         );
+        // The envelope contract promises data shaped by the locked schema;
+        // strip any extra keys the extraction backend tacks on.
+        const parsed = params.extractSchema.safeParse(extractedData);
+        if (parsed.success) extractedData = parsed.data;
       } catch {
         extractedData = undefined;
       }
@@ -130,12 +145,11 @@ export async function runLoop(params: LoopParams): Promise<LoopResult> {
     if (signal?.aborted) return finalize("aborted");
     let observed: ObservedAction | null = null;
     for (let attempt = 0; attempt <= maxObserveRetries; attempt++) {
-      let candidates: ObservedAction[] = [];
+      let candidates: ObservedAction[];
       try {
         candidates = await agent.observe(plan.instruction, variables);
-      } catch (e) {
+      } catch {
         candidates = [];
-        void e;
       }
       if (candidates.length > 0) {
         observed = candidates[0];
@@ -156,8 +170,14 @@ export async function runLoop(params: LoopParams): Promise<LoopResult> {
         risk: { level: "safe", reason: "no target element" },
         decision: "auto",
         outcome: "failed",
-        message: "no matching element found",
+        message: freeReplanUsed
+          ? "no matching element found"
+          : "no matching element found; re-planning once",
       });
+      if (!freeReplanUsed) {
+        freeReplanUsed = true;
+        continue;
+      }
       consecutiveFailures++;
       if (consecutiveFailures >= maxConsecutiveFailures) {
         return finalize("error", { message: "repeated failure to locate elements", step });
@@ -168,22 +188,40 @@ export async function runLoop(params: LoopParams): Promise<LoopResult> {
     const proposed = toProposed(observed, plan.instruction, secretValues);
     emit({ type: "observed", step, action: proposed });
 
-    // 3. Classify risk
-    const risk = classify(proposed);
-    emit({ type: "risk", step, assessment: risk });
-
-    // 4. Confirmation gate (fail-closed)
+    // 3 + 4. Gate. With an allowlist, enforcement is in code: only listed act
+    // methods run, anything else blocks fail-closed and the confirm hook is
+    // never consulted. Without one, the v1 risk classifier + confirm gate apply.
     let decision: ActionRecord["decision"] = "auto";
-    if (risk.level === "risky") {
-      const approved = params.onBeforeAction ? await params.onBeforeAction(proposed) : false;
-      decision = approved ? "approved" : "rejected";
-      emit({ type: "decision", step, decision });
-      if (!approved) {
+    let risk: RiskAssessment;
+    if (params.allowedMethods) {
+      const method = (observed.method ?? "").toLowerCase();
+      const allowed =
+        method !== "" && params.allowedMethods.some((m) => m.toLowerCase() === method);
+      risk = allowed
+        ? { level: "safe", reason: `method "${method}" is allowlisted` }
+        : { level: "risky", reason: `method "${method || "(none)"}" is not in the allowlist` };
+      emit({ type: "risk", step, assessment: risk });
+      if (!allowed) {
+        decision = "rejected";
+        emit({ type: "decision", step, decision });
         actionsLog.push({ step, action: proposed, risk, decision, outcome: "blocked" });
         return finalize("blocked");
       }
+      emit({ type: "decision", step, decision });
     } else {
-      emit({ type: "decision", step, decision: "auto" });
+      risk = classify(proposed);
+      emit({ type: "risk", step, assessment: risk });
+      if (risk.level === "risky") {
+        const approved = params.onBeforeAction ? await params.onBeforeAction(proposed) : false;
+        decision = approved ? "approved" : "rejected";
+        emit({ type: "decision", step, decision });
+        if (!approved) {
+          actionsLog.push({ step, action: proposed, risk, decision, outcome: "blocked" });
+          return finalize("blocked");
+        }
+      } else {
+        emit({ type: "decision", step, decision: "auto" });
+      }
     }
 
     // 5. Execute the approved/safe action

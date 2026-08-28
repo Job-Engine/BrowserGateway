@@ -14,6 +14,7 @@ const fake: { agent: BrowserAgent } = {
       if ("isDone" in shape) return { reasoning: "", isDone: true, instruction: "" };
       return {};
     }) as unknown as BrowserAgent["extract"], // cast: vi.fn can't express the generic extract<T> signature
+    readText: async () => null,
     close: vi.fn(async () => {}),
   },
 };
@@ -32,8 +33,12 @@ describe("runAgent", () => {
     await expect(runAgent({ url: "https://x.com" })).rejects.toBeInstanceOf(TypeError);
     // @ts-expect-error missing url
     await expect(runAgent({ goal: "do it" })).rejects.toBeInstanceOf(TypeError);
-    await expect(runAgent({ url: "https://x.com", goal: "g", maxSteps: 0 })).rejects.toBeInstanceOf(TypeError);
-    await expect(runAgent({ url: "https://x.com", goal: "g", maxSteps: 1.5 })).rejects.toBeInstanceOf(TypeError);
+    await expect(runAgent({ url: "https://x.com", goal: "g", maxSteps: 0 })).rejects.toBeInstanceOf(
+      TypeError,
+    );
+    await expect(
+      runAgent({ url: "https://x.com", goal: "g", maxSteps: 1.5 }),
+    ).rejects.toBeInstanceOf(TypeError);
   });
 
   it("returns a completed result and closes the session", async () => {
@@ -68,9 +73,11 @@ describe("runAgent", () => {
       act: async () => ({ success: true, message: "ok" }),
       extract: (async (_i: string, schema: any) => {
         const shape = schema?.shape ?? {};
-        if ("isDone" in shape) return { reasoning: "", isDone: false, instruction: "submit the form" };
+        if ("isDone" in shape)
+          return { reasoning: "", isDone: false, instruction: "submit the form" };
         return {};
       }) as unknown as import("../src/types.js").BrowserAgent["extract"],
+      readText: async () => null,
       close: closeSpy,
     };
     const browser = await import("../src/browser.js");

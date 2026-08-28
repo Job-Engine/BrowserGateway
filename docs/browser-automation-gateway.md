@@ -1,130 +1,100 @@
-# Browser Automation Gateway
+# Browser Automation Gateway v2 reference
 
-One containerized internal service that other apps (intake, etc.) call to run
-browser automations. Callers send a use case plus business data; the gateway
-picks the right agent from a catalogue, resolves that portal's login from
-1Password, runs the automation on Browserbase, and returns one normalized
-result. Callers never touch credentials, agent IDs, or Browserbase.
+Operator and integrator reference for the shipped v2 system. `AGENTS.md` holds
+the canonical domain model and invariants; `GET /openapi.json` is generated
+from the same zod schemas the routes validate with.
 
-Design decisions (locked): JIT `op read` credentials, self-hosted Stagehand,
-async + poll API.
+## Request flow
 
-## Shape
+1. Caller POSTs `{useCase, client, input, idempotencyKey?}` with a per-caller
+   bearer token. The API validates the token (sha256 hash lookup, fail
+   closed), the scope (`useCase:client` with wildcards), the client roster,
+   the lifecycle gate (pair must be live), and the input (zod).
+2. The job lands in Postgres as QUEUED. 202 returns `{jobId, state}`.
+   Duplicate idempotency keys return the existing job.
+3. The queue worker claims the oldest eligible job with
+   `FOR UPDATE SKIP LOCKED` under a global cap, per-platform caps, and
+   per-`platform.client` credential serialization, stamps a deadline, and
+   increments attempts.
+4. The runner resolves the pair's credentials just in time
+   (`op://<vault>/<platform>.<client>`; TOTP never cached; single-flight;
+   minimal env to the `op` child), builds the goal from the catalogue entry
+   plus the client's navigation overrides, and drives the agent core with the
+   read-only method allowlist and a wall-clock timeout.
+5. The envelope is written in the same statement that advances the job to
+   DONE. Transient system errors retry once. A reaper sweeps RUNNING jobs
+   past their deadline into TIMEOUT envelopes (covers crashed workers).
+6. Caller polls `GET /jobs/:id` (ownership enforced) until state DONE.
 
-```
-apps ──POST /jobs {useCase,input}──▶  Gateway (container)
-                                        ├─ catalogue.ts   useCase → portal + goal + schemas
-                                        ├─ secrets.ts     op read → creds (JIT)
-                                        ├─ runner.ts      runAgent (Stagehand → Browserbase)
-                                        └─ server.ts      async jobs, normalized envelope
-                                        │
-                                        ├─▶ 1Password (service-account token, portals vault)
-                                        └─▶ Browserbase (remote browsers)
-```
+## Job states and envelope
 
-Files: `src/gateway/{types,catalogue,secrets,runner,server}.ts`.
+States: `QUEUED -> RUNNING -> DONE`. A DONE job always carries an envelope
+(database constraint). Envelope: `status` success | failure | error, `data`
+shaped by the action's locked extract schema, `error {code, message,
+fields?}`, `meta {sessionId, sessionReplayUrl, ranAt, durationMs, attempts,
+stepsUsed}`, plus `useCase`, `client`, `jobId`.
 
-## Authentication (why devs never touch secrets)
+Closed error-code enum: `INVALID_INPUT, AUTH_UNAVAILABLE, RUN_ERROR,
+ACTION_BLOCKED, TIMEOUT, MATCH_FAILED, NTP_FIELD_NOT_FOUND,
+GOAL_NOT_COMPLETED, GATEWAY_ERROR`. `MATCH_FAILED` and `NTP_FIELD_NOT_FOUND`
+ride on `failure`; everything else on `error`.
 
-The trust boundary is the gateway process. The container holds exactly one
-portal secret: `OP_SERVICE_ACCOUNT_TOKEN`, a 1Password service account scoped to
-a single vault of portal logins. Per run, `secrets.ts` does `op read` for that
-portal's `username`/`password` (and TOTP if present), hands them to the browser
-run as Stagehand variables (never sent to the LLM, redacted in logs), and lets
-them fall out of memory. Callers send only business data, so they cannot see a
-credential.
+## Public API
 
-### 1Password setup (one time)
+| Route               | Notes                                                                                 |
+| ------------------- | ------------------------------------------------------------------------------------- |
+| `GET /health`       | no auth                                                                               |
+| `GET /openapi.json` | no auth, self-description                                                             |
+| `GET /catalogue`    | v1-compatible `useCases` plus `actions` with JSON schemas and client rosters          |
+| `POST /jobs`        | 202 async; 400 unknown useCase/client or invalid input; 403 unscoped or pair not live |
+| `GET /jobs/:id`     | only the submitting caller (admins see all)                                           |
 
-1. Create a vault for portal logins, e.g. `Portals`.
-2. Add one Login item per portal, named by its `portalKey` (e.g. `lightreach`),
-   with fields `username`, `password`, and `one-time password` if it uses 2FA.
-   References resolve as `op://Portals/lightreach/username`, `/password`,
-   `/one-time password?attribute=otp`.
-3. Create a service account scoped to that vault only; put its token in
-   `OP_SERVICE_ACCOUNT_TOKEN`. Docs: https://www.1password.dev/cli
+## Admin API (isAdmin tokens, under /admin)
 
-Add portal #11 = one catalogue entry + one 1Password item. No core changes.
+`GET /admin/stats`, `GET /admin/jobs?state=&limit=`, `GET /admin/jobs/:id`,
+`POST /admin/tokens` (plaintext returned exactly once), `GET /admin/tokens`,
+`POST /admin/tokens/:id/disable`, `GET /admin/catalogue`,
+`POST /admin/catalogue/:useCase/validate`,
+`POST /admin/catalogue/:useCase/clients/:client/record-test {jobId}`,
+`.../enable`, `.../disable`, `POST /admin/canaries/run`, `GET /admin/audit`.
 
-### Local testing without a service account
+## Action lifecycle (enforced in code)
 
-If `OP_SERVICE_ACCOUNT_TOKEN` is unset, `secrets.ts` falls back to env vars
-`PORTAL_<KEY>_USERNAME` / `_PASSWORD` / `_OTP`, so you can test the full path
-before wiring 1Password.
+Actions seed from `src/gateway/catalogue.ts` as draft. `validate` runs the
+lint gate (every goal placeholder exists in the input schema or is a
+credential variable). `record-test` requires a DONE, success, match-verified
+job for that exact pair and stores its input as the canary config. `enable`
+refuses without a recorded passing test (the first-live-run rule). Only live
+pairs accept caller traffic; admin callers may submit test runs to any pair.
 
-## API
+## Canaries and cost
 
-| Method | Path          | Body / result                                    |
-| ------ | ------------- | ------------------------------------------------ |
-| GET    | /health       | `{ ok: true }`                                   |
-| GET    | /catalogue    | `{ useCases: [...] }`                             |
-| POST   | /jobs         | `{ useCase, input }` → `202 { jobId, state }`    |
-| GET    | /jobs/:id     | `{ state, envelope? }`                            |
+With `GATEWAY_CANARY_INTERVAL_MS` set, every live pair reruns its recorded
+known-record input on the interval; failures alert to `SLACK_WEBHOOK_URL` or
+the log, and land on the pair (`lastCanaryStatus`, `lastCanaryAt`). Cost per
+job = `stepsUsed x GATEWAY_COST_PER_STEP_USD`, stored on the job row.
 
-Set `GATEWAY_TOKEN` to require `authorization: Bearer <token>` from callers.
+## Operations
 
-### Envelope
+- Boot: migrations apply automatically; the registry seeds from code.
+- Shutdown: SIGTERM stops claiming, drains in-flight runs, closes the pool.
+- Concurrency: `GATEWAY_GLOBAL_CAP` (default 3), `GATEWAY_PLATFORM_CAP`
+  (default 2), plus one-run-per-credential serialization.
+- Local dev: `docker compose up -d`, `GATEWAY_DEV_TOKEN` seeds one admin
+  caller. Production issues scoped tokens via the admin API and never sets it.
+- Logs: pino JSON with redaction (customer PII in inputs, credentials,
+  authorization headers). Correlation: reqId per request, jobId on queue logs.
 
-```json
-{
-  "jobId": "…",
-  "useCase": "lightreach.ntpDate",
-  "status": "success | failure | error",
-  "data": { "ntpDate": "…", "matchVerified": true, "…": "…" },
-  "error": { "code": "MATCH_FAILED", "message": "…", "fields": ["address"] },
-  "meta": { "sessionId": "…", "sessionReplayUrl": "…", "ranAt": "…", "durationMs": 0, "attempts": 1 }
-}
-```
+## Onboarding a new client on an existing action
 
-`success` = goal met, `failure` = ran cleanly but negative outcome (no match /
-missing field), `error` = system/auth/nav problem. `sessionId` + replay URL come
-back every time for troubleshooting.
+1. Add the client to the action's roster in `catalogue.ts` (overrides are
+   navigation-only; the extract schema cannot be overridden).
+2. Create the 1Password login item `platform.client` in the portals vault.
+3. Deploy; the registry seeds the pair as disabled.
+4. Submit a test run as admin against a known record; `record-test` with the
+   job id; `enable` the pair. The test input becomes the canary.
 
-## Run it
+## Not in v2 (binding YAGNI)
 
-Local:
-
-```bash
-# 1Password path:
-OP_SERVICE_ACCOUNT_TOKEN=ops_... OP_PORTALS_VAULT=Portals \
-BROWSERBASE_API_KEY=... BROWSERBASE_PROJECT_ID=... ANTHROPIC_API_KEY=... \
-npm run gateway
-
-# or local-cred fallback:
-PORTAL_LIGHTREACH_USERNAME=... PORTAL_LIGHTREACH_PASSWORD=... \
-BROWSERBASE_API_KEY=... BROWSERBASE_PROJECT_ID=... ANTHROPIC_API_KEY=... \
-npm run gateway
-```
-
-Call it:
-
-```bash
-JOB=$(curl -s -X POST localhost:8080/jobs -H 'content-type: application/json' \
-  -d '{"useCase":"lightreach.ntpDate","input":{"name":"Jane Homeowner","address":"123 Solar Way, Austin TX 78701"}}' \
-  | jq -r .jobId)
-
-curl -s localhost:8080/jobs/$JOB | jq   # poll until state == DONE
-```
-
-Container:
-
-```bash
-docker build -t bb-gateway .
-docker run --rm -p 8080:8080 \
-  -e OP_SERVICE_ACCOUNT_TOKEN -e OP_PORTALS_VAULT=Portals \
-  -e BROWSERBASE_API_KEY -e BROWSERBASE_PROJECT_ID -e ANTHROPIC_API_KEY \
-  bb-gateway
-```
-
-## Notes / next steps
-
-- Job store is in-memory; swap for Redis/DB when you need durability or multiple
-  replicas.
-- 1Password service accounts have rate limits; `secrets.ts` caches reads for 60s
-  per portal.
-- Browserbase caps concurrent sessions by plan; add a queue before scaling.
-- `runner.ts` auto-approves risky steps (headless login submit). Goals are
-  read-only after login; tighten `classifyRisk`/`onBeforeAction` per entry if a
-  portal exposes destructive actions.
-- Later: switch `op read` (CLI) to the 1Password SDK for a long-running service,
-  and add pre-warmed Browserbase Contexts per portal to skip most logins.
+No Redis or queue infrastructure beyond Postgres, no webhooks, no write
+actions, no rules DSL for overrides, no GraphQL or gRPC, no plugin system.

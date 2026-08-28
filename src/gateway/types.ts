@@ -15,11 +15,19 @@ export interface JobMeta {
   ranAt: string;
   durationMs: number;
   attempts: number;
+  /** Agent loop steps consumed; feeds cost accounting. Additive. */
+  stepsUsed?: number;
+  /** How the run was driven: deterministic replay, LLM learn, or heal. Additive. */
+  mode?: "replay" | "learned" | "healed";
+  /** Trace version used (replay) or recorded (learned/healed). Additive. */
+  traceVersion?: number;
 }
 
 export interface JobEnvelope {
   jobId: string;
   useCase: string;
+  /** Whitelabel client identity this job ran as. Additive; absent in v1 envelopes. */
+  client?: string;
   /** success = goal met; failure = ran cleanly but negative outcome; error = system/auth/nav problem. */
   status: JobStatus;
   data?: unknown;

@@ -10,6 +10,12 @@ export interface CreateSessionConfig {
   context?: { id: string; persist?: boolean };
   headless?: boolean;
   verbose?: 0 | 1 | 2;
+  /**
+   * Browserbase session lease in seconds. Their default (~300s) kills the
+   * browser mid-run for anything slower; must cover the run's wall-clock
+   * budget plus margin.
+   */
+  sessionTimeoutSeconds?: number;
 }
 
 export async function createSession(config: CreateSessionConfig): Promise<BrowserAgent> {
@@ -27,6 +33,7 @@ export async function createSession(config: CreateSessionConfig): Promise<Browse
           projectId,
           browserbaseSessionCreateParams: {
             projectId: projectId ?? "",
+            ...(config.sessionTimeoutSeconds ? { timeout: config.sessionTimeoutSeconds } : {}),
             ...(config.context
               ? {
                   browserSettings: {
@@ -47,14 +54,21 @@ export async function createSession(config: CreateSessionConfig): Promise<Browse
   await stagehand.init();
   const page = stagehand.context.pages()[0] ?? (await stagehand.context.newPage());
 
+  // Captured once: the live getters return undefined after the CDP transport
+  // dies, which would strip the replay URL from timeout envelopes.
+  const sessionReplayUrl = stagehand.browserbaseSessionURL;
+  const sessionId = stagehand.browserbaseSessionID;
+
   return {
-    get sessionReplayUrl() {
-      return stagehand.browserbaseSessionURL;
-    },
+    sessionReplayUrl,
+    sessionId,
     async goto(url: string) {
       await page.goto(url);
     },
-    async observe(instruction: string, variables?: Record<string, string>): Promise<ObservedAction[]> {
+    async observe(
+      instruction: string,
+      variables?: Record<string, string>,
+    ): Promise<ObservedAction[]> {
       const result = await stagehand.observe(instruction, variables ? { variables } : undefined);
       return result.map((a) => ({
         selector: a.selector,
@@ -70,6 +84,18 @@ export async function createSession(config: CreateSessionConfig): Promise<Browse
     async extract<T>(instruction: string, schema: z.ZodType<T>): Promise<T> {
       // Cast at the adapter boundary: Stagehand accepts Zod 3/4 schemas via its own type.
       return stagehand.extract(instruction, schema as never) as Promise<T>;
+    },
+    async readText(selector: string): Promise<string | null> {
+      try {
+        // Stagehand's understudy Locator.textContent() takes no options (no
+        // timeout param, unlike real Playwright); resolution timeout is
+        // internal to the locator. Never throws past this boundary.
+        const text = await page.locator(selector).first().textContent();
+        const trimmed = text.trim();
+        return trimmed.length > 0 ? trimmed : null;
+      } catch {
+        return null;
+      }
     },
     async close() {
       await stagehand.close();

@@ -1,7 +1,7 @@
 {
-  "name": "web-action-agent",
+  "name": "browser-automation-gateway",
   "version": "0.1.0",
-  "description": "Autonomous web action agent: drives Browserbase via Stagehand to complete natural-language goals on arbitrary sites with per-action human confirmation.",
+  "description": "API access to web portals that have no API, via LLM-driven cloud browsers",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -23,17 +23,48 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "agent": "tsx src/cli.ts",
-    "gateway": "tsx src/gateway/server.ts"
+    "gateway": "tsx src/gateway/server.ts",
+    "console:dev": "npm --prefix admin-web run dev",
+    "console:build": "npm --prefix admin-web run build",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "prepare": "husky",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down"
   },
   "license": "MIT",
   "dependencies": {
     "@browserbasehq/stagehand": "^3.6.0",
+    "fastify": "^5.10.0",
+    "pg": "^8.22.0",
+    "pino": "^10.3.1",
+    "playwright-core": "^1.62.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^26.1.1",
+    "@types/pg": "^8.20.0",
+    "@vitest/coverage-v8": "^4.1.10",
+    "eslint": "^10.7.0",
+    "eslint-config-prettier": "^10.1.8",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.8",
+    "pino-pretty": "^13.1.3",
+    "prettier": "^3.9.5",
     "tsx": "^4.23.0",
-    "typescript": "^7.0.2",
+    "typescript": "5.9.3",
+    "typescript-eslint": "^8.64.0",
     "vitest": "^4.1.10"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js}": [
+      "prettier --write",
+      "eslint --fix"
+    ],
+    "*.{json,md,html,css}": [
+      "prettier --write"
+    ]
   }
 }
