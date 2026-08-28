@@ -29,6 +29,13 @@ RUN apt-get update \
 FROM node:20-slim
 WORKDIR /app
 ENV NODE_ENV=production
+# ca-certificates: the `op` CLI (a Go binary) verifies TLS against the SYSTEM
+# trust store, which node:20-slim ships empty — without this, `op read` fails
+# with "x509: certificate signed by unknown authority" against 1Password's API
+# and JIT credential resolution dies with AUTH_UNAVAILABLE.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
 COPY --from=opcli /usr/local/bin/op /usr/local/bin/op
 COPY --from=proddeps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
