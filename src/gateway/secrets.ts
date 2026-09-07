@@ -57,6 +57,32 @@ function minimalOpEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
+/**
+ * The `op://` base for one credential item.
+ *
+ * A credential item is normally a bare NAME, resolved inside the single vault
+ * the gateway's service account is scoped to. But not every portal's login lives
+ * there: Daylight's two installer logins sit in their own per-tenant vaults
+ * (`op://Daylight/...`, `op://2ndCitySolarEnergy/...`) and predate this service.
+ *
+ * Rather than copy those secrets into the portals vault, a credential item may
+ * ALSO be given as a full reference. Copying a live credential between vaults
+ * creates a second place it can leak from and a second thing to rotate, which is
+ * strictly worse than teaching this one function to read a reference it was
+ * handed.
+ *
+ * The service account still has to be granted read access to that vault. This
+ * removes a copy step, not a permission.
+ */
+export function secretReferenceBase(credentialItem: string): string {
+  if (credentialItem.startsWith("op://")) {
+    // Trailing slashes would produce `op://Vault/Item//username`, which op
+    // rejects with a message about the reference rather than the item.
+    return credentialItem.replace(/\/+$/, "");
+  }
+  return `op://${vault()}/${credentialItem}`;
+}
+
 async function opRead(reference: string): Promise<string> {
   const { stdout } = await execFileAsync("op", ["read", reference], {
     env: minimalOpEnv(),
@@ -94,7 +120,7 @@ export async function resolvePortalCredentials(
     return fb;
   }
 
-  const base = `op://${vault()}/${portalKey}`;
+  const base = secretReferenceBase(portalKey);
   let staticCreds: { username: string; password: string };
   const cached = cache.get(portalKey);
   if (cached && cached.expires > Date.now()) {

@@ -271,9 +271,14 @@ export const CATALOGUE: Record<string, CatalogueEntry> = {
     // Daylight scopes every job to the logged-in installer and 404s every
     // cross-installer read, so the two tenants are genuinely separate logins
     // with separate 1Password items, never one shared session.
+    // Full op:// references, not bare item names. These two logins already
+    // live in their own per-tenant vaults and predate this service; copying
+    // them into the portals vault would create a second place each can leak
+    // from and a second thing to rotate. The service account still needs read
+    // access to both vaults, which is a permission, not a copy.
     clients: {
-      wolfpack: { credentialItem: "Daylight - Wolfpack" },
-      "2ndcity": { credentialItem: "Daylight - 2ndCitySolarEnergy" },
+      wolfpack: { credentialItem: "op://Daylight/qvohv6flztebotuucxtkyfneee" },
+      "2ndcity": { credentialItem: "op://2ndCitySolarEnergy/qcvsn54ckun5habaasmuo5234y" },
     },
   },
 };
