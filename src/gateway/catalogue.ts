@@ -5,6 +5,11 @@ import {
   lightreachSnapshotHandler,
   lightreachSnapshotInput,
 } from "../portals/lightreach/action.js";
+import {
+  daylightLoginExtract,
+  daylightLoginHandler,
+  daylightLoginInput,
+} from "../portals/daylight/action.js";
 
 /**
  * The agent catalogue. Each entry binds a useCase to a portal, the input it
@@ -224,8 +229,8 @@ export const CATALOGUE: Record<string, CatalogueEntry> = {
     },
   },
 
-  // Code action (issue #467): batch snapshot by palmetto account id — NTP,
-  // stipulations, credit expiry — via deterministic login + HTTP (no LLM/replay).
+  // Code action (issue #467): batch snapshot by palmetto account id, NTP,
+  // stipulations, credit expiry, via deterministic login + HTTP (no LLM/replay).
   // Runs the handler in src/portals/lightreach/action.ts.
   "lightreach.accountSnapshot": {
     useCase: "lightreach.accountSnapshot",
@@ -242,6 +247,40 @@ export const CATALOGUE: Record<string, CatalogueEntry> = {
       spartan: { credentialItem: "Lightreach - Spartan" },
       lgcyco: {},
       brandx: {},
+    },
+  },
+
+  // Code action: mint a Daylight portal session for one installer and return
+  // the cookie, so the calling app never holds the credential.
+  //
+  // NO BROWSER ON PURPOSE. LightReach drives Browserbase because Auth0 defeats
+  // pure HTTP; Daylight is a plain Django CSRF form login that works over
+  // fetch, and this gateway's rule is to use a browser only where HTTP fails.
+  // A Daylight login therefore costs zero metered Browserbase minutes. If the
+  // portal ever adds bot detection or MFA, `performDaylightLogin` is where a
+  // browser path slots in behind the same signature.
+  "daylight.login": {
+    useCase: "daylight.login",
+    portalKey: "daylight",
+    url: "https://daylightportal.com/installers/login",
+    inputSchema: daylightLoginInput,
+    extractSchema: daylightLoginExtract,
+    requiresLogin: true,
+    buildGoal: () => "code-action: Daylight session mint (no LLM, no browser).",
+    handler: daylightLoginHandler,
+    // Daylight scopes every job to the logged-in installer and 404s every
+    // cross-installer read, so the two tenants are genuinely separate logins
+    // with separate 1Password items, never one shared session.
+    // Bare item names, resolved inside OP_PORTALS_VAULT, matching the
+    // LightReach convention. Verified 2026-09-08: both items are readable by
+    // the gateway's service account, which can see only that one vault.
+    //
+    // Daylight scopes every job to the logged-in installer and 404s
+    // cross-installer reads, so the two installers are genuinely separate
+    // logins and separate sessions, never one shared credential.
+    clients: {
+      wolfpack: { credentialItem: "Daylight portal - Wolfpack" },
+      "2ndcity": { credentialItem: "Daylight portal - 2ndCity" },
     },
   },
 };
