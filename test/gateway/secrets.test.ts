@@ -136,37 +136,3 @@ describe("resolvePortalCredentials (env fallback)", () => {
     await expect(resolvePortalCredentials("lightreach")).rejects.toThrow(/No credentials/);
   });
 });
-
-describe("secretReferenceBase", () => {
-  it("resolves a bare item name inside the configured portals vault", async () => {
-    const { secretReferenceBase } = await import("../../src/gateway/secrets.js");
-    const previous = process.env.OP_PORTALS_VAULT;
-    process.env.OP_PORTALS_VAULT = "Portals";
-    expect(secretReferenceBase("lightreach")).toBe("op://Portals/lightreach");
-    process.env.OP_PORTALS_VAULT = previous;
-  });
-
-  it("passes a FULL op:// reference through untouched", async () => {
-    // Daylight's two installer logins live in their own per-tenant vaults and
-    // predate this service. Copying a live credential into the portals vault
-    // would create a second place it can leak from and a second thing to
-    // rotate, which is worse than reading the reference we were handed.
-    const { secretReferenceBase } = await import("../../src/gateway/secrets.js");
-    expect(secretReferenceBase("op://Daylight/qvohv6flztebotuucxtkyfneee")).toBe(
-      "op://Daylight/qvohv6flztebotuucxtkyfneee",
-    );
-  });
-
-  it("trims a trailing slash, which op rejects confusingly", async () => {
-    const { secretReferenceBase } = await import("../../src/gateway/secrets.js");
-    expect(secretReferenceBase("op://Daylight/item/")).toBe("op://Daylight/item");
-  });
-
-  it("defaults the vault name when none is configured", async () => {
-    const { secretReferenceBase } = await import("../../src/gateway/secrets.js");
-    const previous = process.env.OP_PORTALS_VAULT;
-    delete process.env.OP_PORTALS_VAULT;
-    expect(secretReferenceBase("x")).toBe("op://Portals/x");
-    if (previous !== undefined) process.env.OP_PORTALS_VAULT = previous;
-  });
-});

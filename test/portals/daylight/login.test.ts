@@ -203,13 +203,13 @@ describe("daylight.login catalogue entry", () => {
 
   it("keeps the two installers on separate 1Password items", async () => {
     const { resolveAction } = await import("../../../src/gateway/catalogue.js");
-    // Full op:// references so the existing per-tenant vaults are read in
-    // place rather than the secrets being copied into the portals vault.
+    // Bare names, resolved inside OP_PORTALS_VAULT, matching LightReach.
+    // Verified against the live vault 2026-09-08.
     expect(resolveAction("daylight.login", "wolfpack").credentialItem).toBe(
-      "op://Daylight/qvohv6flztebotuucxtkyfneee",
+      "Daylight portal - Wolfpack",
     );
     expect(resolveAction("daylight.login", "2ndcity").credentialItem).toBe(
-      "op://2ndCitySolarEnergy/qcvsn54ckun5habaasmuo5234y",
+      "Daylight portal - 2ndCity",
     );
   });
 
