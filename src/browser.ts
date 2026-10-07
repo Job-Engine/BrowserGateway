@@ -34,13 +34,15 @@ export async function createSession(config: CreateSessionConfig): Promise<Browse
           browserbaseSessionCreateParams: {
             projectId: projectId ?? "",
             ...(config.sessionTimeoutSeconds ? { timeout: config.sessionTimeoutSeconds } : {}),
-            ...(config.context
-              ? {
-                  browserSettings: {
-                    context: { id: config.context.id, persist: config.context.persist ?? false },
-                  },
-                }
-              : {}),
+            browserSettings: {
+              // Browserbase records every session by default, and portal logins
+              // are typed into the recorded page. Off unless explicitly enabled
+              // for debugging (TDD #145).
+              recordSession: process.env.BB_RECORD_SESSION === "true",
+              ...(config.context
+                ? { context: { id: config.context.id, persist: config.context.persist ?? false } }
+                : {}),
+            },
           },
         })
       : new Stagehand({
