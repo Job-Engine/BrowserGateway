@@ -1,0 +1,7 @@
+# Weekly updates for digest-pinned Docker base images and GitHub Actions.
+version: 2
+updates:
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
