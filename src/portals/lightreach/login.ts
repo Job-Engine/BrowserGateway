@@ -13,8 +13,12 @@ import type { CookieGet, WarmSession } from "./batch.js";
  * per day; everything else is browserless.
  */
 
-const LOGIN_URL = "https://auth.palmetto.com/login";
 const APP_HOME = "https://palmetto.finance";
+// Enter through the app, not auth.palmetto.com/login directly: since ~2026-10
+// a bare /login (no OAuth state) redirects to a 404 on alchemy.palmetto.com.
+// palmetto.finance starts the OAuth flow and lands on the Auth0 form with
+// state, and its redirect_uri completes the token exchange back on the app.
+const LOGIN_URL = APP_HOME;
 const EMAIL_SEL = 'input[type="email"], input[name="username"], #username';
 const PASS_SEL = 'input[type="password"]';
 
