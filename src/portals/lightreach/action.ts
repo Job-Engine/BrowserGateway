@@ -50,12 +50,14 @@ function budgetFor(client: string): PolitenessBudget {
  * reads still spent the 200/h budget, so each new deal's create-poll ~90s later
  * got "read budget exhausted". So: pace accounts, back off on 429 and stop
  * rather than hammer, keep a reserve for single-account create-polls, and stop
- * starting accounts well inside the caller's 180s poll timeout.
+ * starting accounts inside the refresh sweep's 330s poll timeout (job-automation
+ * LIGHTREACH_SWEEP_TIMEOUT_MS) and well inside GATEWAY_RUN_DEADLINE_MS (660s in
+ * prod). ~2.5s per account → ~100 accounts per run.
  */
 export const LIGHTREACH_BATCH_TUNING = {
   paceMs: 2_000,
   max429Retries: 2,
-  maxRunMs: 150_000,
+  maxRunMs: 270_000,
   reserveReads: 20,
 } as const;
 
