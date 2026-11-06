@@ -89,3 +89,13 @@ describe("lightreachSnapshotHandler — warm session reuse", () => {
     expect(loginMock.mock.calls.length).toBe(before + 1);
   });
 });
+
+describe("LIGHTREACH_BATCH_TUNING — fits inside the callers' clocks", () => {
+  it("leaves headroom under the consumer's 180s poll timeout and the gateway's 330s reaper", async () => {
+    const { LIGHTREACH_BATCH_TUNING: t } = await import("../../../src/portals/lightreach/action.js");
+    expect(t.maxRunMs).toBeLessThan(180_000);
+    expect(t.paceMs).toBeGreaterThan(0);
+    expect(t.reserveReads).toBeGreaterThan(0);
+    expect(t.reserveReads).toBeLessThan(200);
+  });
+});

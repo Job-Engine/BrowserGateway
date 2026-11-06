@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   LightreachAuthExpiredError,
+  LightreachThrottledError,
   readLightreachAccount,
   type AuthedFetch,
 } from "../../../src/portals/lightreach/read.js";
@@ -65,5 +66,11 @@ describe("readLightreachAccount", () => {
     const { fetch, urls: hit } = fakeFetch({});
     await readLightreachAccount(weird, fetch).catch(() => {});
     for (const u of hit) expect(u).toContain(encodeURIComponent(weird));
+  });
+
+  it("throws LightreachThrottledError on a 429 so the batch can back off instead of hammering", async () => {
+    const fetch429 = async () => ({ ok: false, status: 429, json: async () => ({}) });
+    await expect(readLightreachAccount("a1", fetch429)).rejects.toBeInstanceOf(LightreachThrottledError);
+    await expect(readLightreachAccount("a1", fetch429)).rejects.toThrow(/\(429\)/);
   });
 });

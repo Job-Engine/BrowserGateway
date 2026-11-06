@@ -1,5 +1,10 @@
-import { PolitenessBudget } from "../politeness.js";
-import { LightreachAuthExpiredError, readLightreachAccount, type AuthedFetch } from "./read.js";
+import type { PolitenessBudget } from "../politeness.js";
+import {
+  LightreachAuthExpiredError,
+  LightreachThrottledError,
+  readLightreachAccount,
+  type AuthedFetch,
+} from "./read.js";
 import { parseLightreachSnapshot, type LightreachSnapshot } from "./snapshot.js";
 
 /**
@@ -35,6 +40,21 @@ export interface BatchDeps {
   now: () => number;
   /** Warm-session TTL; default 23h (under the observed 24h cookie life). */
   sessionTtlMs?: number;
+  /** Pause between accounts (not before the first). Default 0; the production
+   *  handler sets it — see action.ts. Each account is 3 parallel GETs. */
+  paceMs?: number;
+  /** Times to back off and retry ONE account on a 429 before giving up on the
+   *  batch. Default 2. */
+  max429Retries?: number;
+  /** Stop starting new accounts after this much wall clock (callers poll with a
+   *  180s timeout and the gateway reaps at 330s). Default: no cap. */
+  maxRunMs?: number;
+  /** Reads a MULTI-account batch must leave unspent in the hourly budget, so a
+   *  single-account create-poll still gets through after a sweep. Default 0. */
+  reserveReads?: number;
+  sleep?: (ms: number) => Promise<void>;
+  /** Jitter source for back-off, in [0,1). */
+  rand?: () => number;
 }
 
 export type BatchRecordStatus = "success" | "error" | "rate_limited";
@@ -77,20 +97,51 @@ export async function runLightreachBatch(
     return { session: null, results: accountIds.map((accountId) => ({ accountId, status: "error", error: "login budget exhausted" })) };
   }
 
+  const paceMs = deps.paceMs ?? 0;
+  const max429Retries = deps.max429Retries ?? 2;
+  const reserve = accountIds.length > 1 ? (deps.reserveReads ?? 0) : 0;
+  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const rand = deps.rand ?? Math.random;
+  const startedAt = deps.now();
+
+  const deferRest = (from: number, error: string, firstError = error) => {
+    for (let j = from; j < accountIds.length; j++) {
+      results.push({ accountId: accountIds[j], status: "rate_limited", error: j === from ? firstError : error });
+    }
+  };
+
   for (let i = 0; i < accountIds.length; i++) {
     const accountId = accountIds[i];
-    if (!deps.budget.tryReads(deps.client, 1, deps.now())) {
-      // Read budget hit: stop politely, mark this and the rest rate_limited.
-      for (let j = i; j < accountIds.length; j++) {
-        results.push({ accountId: accountIds[j], status: "rate_limited", error: "read budget exhausted" });
-      }
+    if (deps.maxRunMs !== undefined && deps.now() - startedAt >= deps.maxRunMs) {
+      deferRest(i, "run time cap reached; deferred to the next run");
       break;
     }
+    if (!deps.budget.tryReads(deps.client, 1, deps.now(), reserve)) {
+      // Read budget hit: stop politely, mark this and the rest rate_limited.
+      deferRest(i, "read budget exhausted");
+      break;
+    }
+    if (i > 0 && paceMs > 0) await sleep(paceMs);
 
     const authed = (jar: string): AuthedFetch => (url) => deps.httpGet(url, jar);
+    // Read one account, backing off on 429. Returns "throttled" when Palmetto
+    // keeps refusing after the retries.
+    const readWithBackoff = async (jar: string): Promise<BatchRecordResult | "throttled"> => {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const raw = await readLightreachAccount(accountId, authed(jar));
+          return { accountId, status: "success", snapshot: parseLightreachSnapshot(raw) };
+        } catch (e) {
+          if (!(e instanceof LightreachThrottledError)) throw e;
+          if (attempt >= max429Retries) return "throttled";
+          await sleep(deps.budget.backoffMs(attempt, rand()));
+        }
+      }
+    };
+
+    let outcome: BatchRecordResult | "throttled";
     try {
-      const raw = await readLightreachAccount(accountId, authed(active.cookieHeader));
-      results.push({ accountId, status: "success", snapshot: parseLightreachSnapshot(raw) });
+      outcome = await readWithBackoff(active.cookieHeader);
     } catch (e) {
       if (e instanceof LightreachAuthExpiredError) {
         // Jar expired mid-batch: force a re-login (budget permitting) and retry once.
@@ -102,15 +153,26 @@ export async function runLightreachBatch(
         }
         active = renewed;
         try {
-          const raw = await readLightreachAccount(accountId, authed(active.cookieHeader));
-          results.push({ accountId, status: "success", snapshot: parseLightreachSnapshot(raw) });
+          outcome = await readWithBackoff(active.cookieHeader);
         } catch (e2) {
           results.push({ accountId, status: "error", error: String((e2 as Error).message ?? e2) });
+          continue;
         }
       } else {
         results.push({ accountId, status: "error", error: String((e as Error).message ?? e) });
+        continue;
       }
     }
+
+    if (outcome === "throttled") {
+      // Palmetto is still refusing: stop instead of firing the rest of the list
+      // into a wall. The refused read returned no data, so it does not count
+      // against our own hourly budget. Unread accounts stay due for next run.
+      deps.budget.refundReads(deps.client, 1);
+      deferRest(i, "deferred: portal throttling (429)", `portal throttled (429) after ${max429Retries} retries`);
+      break;
+    }
+    results.push(outcome);
   }
 
   return { session: active, results };

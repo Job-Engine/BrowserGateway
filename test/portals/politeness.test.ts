@@ -54,4 +54,26 @@ describe("PolitenessBudget", () => {
     expect(b.backoffMs(20, 0)).toBe(30_000);
     expect(b.backoffMs(20, 0.9999999)).toBeCloseTo(60_000, 0);
   });
+
+  it("reserve: a caller may not dip into the last `reserve` reads; an unreserved caller may", () => {
+    const b = new PolitenessBudget({ loginsPerHour: 1, readsPerHour: 5 });
+    expect(b.tryReads("spartan", 3, T0, 2)).toBe(true); // 3 <= 5-2
+    expect(b.tryReads("spartan", 1, T0, 2)).toBe(false); // would eat the reserve
+    expect(b.tryReads("spartan", 2, T0)).toBe(true); // a single (unreserved) caller still gets the last 2
+  });
+
+  it("refundReads returns spent reads to the window (a throttled read never touched data)", () => {
+    const b = new PolitenessBudget({ loginsPerHour: 1, readsPerHour: 2 });
+    expect(b.tryReads("spartan", 2, T0)).toBe(true);
+    expect(b.tryReads("spartan", 1, T0)).toBe(false);
+    b.refundReads("spartan", 1);
+    expect(b.tryReads("spartan", 1, T0)).toBe(true);
+  });
+
+  it("refundReads never goes below zero", () => {
+    const b = new PolitenessBudget({ loginsPerHour: 1, readsPerHour: 1 });
+    b.refundReads("spartan", 5);
+    expect(b.tryReads("spartan", 1, T0)).toBe(true);
+    expect(b.tryReads("spartan", 1, T0)).toBe(false);
+  });
 });

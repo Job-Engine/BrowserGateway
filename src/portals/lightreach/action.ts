@@ -36,11 +36,28 @@ const budgets = new Map<string, PolitenessBudget>();
 function budgetFor(client: string): PolitenessBudget {
   let b = budgets.get(client);
   if (!b) {
-    b = new PolitenessBudget({ loginsPerHour: 2, readsPerHour: 200 });
+    // baseBackoffMs 5s: Palmetto's 429 window is seconds, not the 1s default.
+    b = new PolitenessBudget({ loginsPerHour: 2, readsPerHour: 200, baseBackoffMs: 5_000 });
     budgets.set(client, b);
   }
   return b;
 }
+
+/**
+ * Batch pacing for Palmetto (measured in prod 2026-11-05/06): firing every
+ * account back-to-back (~250 accounts x 3 GETs in ~22s) got 429s from position
+ * 16 onward in every sweep — only ~32 of ~250 reads succeeded — and the refused
+ * reads still spent the 200/h budget, so each new deal's create-poll ~90s later
+ * got "read budget exhausted". So: pace accounts, back off on 429 and stop
+ * rather than hammer, keep a reserve for single-account create-polls, and stop
+ * starting accounts well inside the caller's 180s poll timeout.
+ */
+export const LIGHTREACH_BATCH_TUNING = {
+  paceMs: 2_000,
+  max429Retries: 2,
+  maxRunMs: 150_000,
+  reserveReads: 20,
+} as const;
 
 // Per-client WARM SESSION, PROCESS-scoped for the same reason as the budget:
 // `runLightreachBatch` already accepts a session and returns "(possibly
@@ -71,6 +88,7 @@ export const lightreachSnapshotHandler: ActionHandler = async ({ input, credenti
       httpGet: httpGetWithCookie,
       budget: budgetFor(client),
       now: () => Date.now(),
+      ...LIGHTREACH_BATCH_TUNING,
     },
     sessions.get(client) ?? null,
   );
