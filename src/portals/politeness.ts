@@ -41,9 +41,21 @@ export class PolitenessBudget {
     return this.spend(this.logins, client, 1, this.loginsPerHour, now);
   }
 
-  /** Try to spend `count` reads for `client`. All-or-nothing. */
-  tryReads(client: string, count: number, now: number): boolean {
-    return this.spend(this.reads, client, count, this.readsPerHour, now);
+  /** Try to spend `count` reads for `client`. All-or-nothing.
+   *  `reserve` holds back that many reads from THIS caller: a bulk sweep passes a
+   *  reserve so it can never take the last reads an hour has, leaving them for
+   *  single-account create-polls (prod 2026-11-06: a sweep used the whole hour
+   *  and every new deal's poll ~90s later got "read budget exhausted"). */
+  tryReads(client: string, count: number, now: number, reserve = 0): boolean {
+    return this.spend(this.reads, client, count, Math.max(0, this.readsPerHour - reserve), now);
+  }
+
+  /** Give back the most recent `count` reads — for a read the portal refused
+   *  (429) and that therefore touched no data. Never goes below zero. */
+  refundReads(client: string, count: number): void {
+    const recent = this.reads.get(client);
+    if (!recent) return;
+    recent.splice(Math.max(0, recent.length - count), count);
   }
 
   /** Backoff delay (ms) for retry `attempt` (0-based) after a throttle signal.

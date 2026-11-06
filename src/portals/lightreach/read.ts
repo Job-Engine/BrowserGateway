@@ -27,6 +27,16 @@ export class LightreachAuthExpiredError extends Error {
   }
 }
 
+/** Thrown on a 429: Palmetto is throttling us. The orchestrator backs off and
+ *  retries, then stops the batch rather than firing the rest into a wall.
+ *  The message keeps the "(429) at <url>" shape the old generic error had. */
+export class LightreachThrottledError extends Error {
+  constructor(public readonly url: string) {
+    super(`LightReach read failed (429) at ${url}`);
+    this.name = "LightreachThrottledError";
+  }
+}
+
 function endpoints(accountId: string) {
   const id = encodeURIComponent(accountId);
   return {
@@ -39,6 +49,7 @@ function endpoints(accountId: string) {
 async function getJson(url: string, fetchImpl: AuthedFetch): Promise<unknown> {
   const res = await fetchImpl(url);
   if (res.status === 401) throw new LightreachAuthExpiredError(url);
+  if (res.status === 429) throw new LightreachThrottledError(url);
   if (!res.ok) throw new Error(`LightReach read failed (${res.status}) at ${url}`);
   return res.json();
 }
